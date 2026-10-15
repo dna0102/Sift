@@ -34,6 +34,184 @@ const Scan = (() => {
     const clear = $("#scan-clear"); if (clear) clear.onclick = () => post("/api/scan/clear");
     const stop = $("#scan-stop"); if (stop) stop.onclick = () => post("/api/scan/stop");
     const active = $("#scan-active"); if (active) active.onclick = openActive;
+    const ai = $("#scan-ai"); if (ai) ai.onclick = aiTriage;
+    const assist = $("#scan-assist"); if (assist) assist.onclick = openAssistant;
+    const aiset = $("#scan-aiset"); if (aiset) aiset.onclick = openAISettings;
+  }
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, { method: "POST", headers: { "X-Sift": "1", "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    const msg = res.headers.get("X-Toast");
+    if (msg) toast(decodeURIComponent(msg.replace(/\+/g, " ")));
+    return res.json();
+  }
+
+  function md(text) {
+    let h = esc(text || "");
+    h = h.replace(/```([\s\S]*?)```/g, (_, c) => `<pre class="ev-snip">${c}</pre>`);
+    h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
+    h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    h = h.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h3>$1</h3>");
+    h = h.replace(/^\s*[-*] (.*)$/gm, "<li>$1</li>");
+    h = h.replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>");
+    return h.replace(/\n/g, "<br>");
+  }
+
+  async function aiTriage() {
+    const btn = $("#scan-ai"); if (btn) { btn.disabled = true; btn.textContent = "Triaging…"; }
+    const out = await postJSON("/api/ai/triage", {});
+    if (btn) { btn.disabled = false; btn.textContent = "AI triage"; }
+    if (out.error) { toast(out.error); return; }
+    toast(`AI triaged ${(out.items || []).length} findings`);
+  }
+
+  function aiPanel(title, inner) {
+    $("#modal").innerHTML = `<div class="overlay" data-backdrop><div class="modal wide">
+      <header class="mh"><h2>${esc(title)}</h2><button type="button" class="x" data-close title="Close (Esc)">✕</button></header>
+      <div class="aipanel">${inner}</div></div></div>`;
+  }
+
+  function openAssistant() {
+    aiPanel("AI assistant", `
+      <div class="aitabs">
+        <button class="on" data-aitab="chat">Chat</button>
+        <button data-aitab="correlate">Correlate</button>
+        <button data-aitab="recommend">Recommend tests</button>
+      </div>
+      <div id="ai-out" class="aiout"><p class="muted">Ask about the traffic and findings, or run a one-shot analysis.</p></div>
+      <div id="ai-chatbar" class="aichatbar">
+        <label class="scanck"><input type="checkbox" id="ai-ctx" checked> include traffic & findings</label>
+        <input id="ai-q" placeholder="Ask the assistant…" autocomplete="off">
+        <button id="ai-send" class="btn primary">Send</button>
+      </div>`);
+    const out = $("#ai-out"), history = [];
+    const run = async (url, body, label) => {
+      out.innerHTML = `<p class="muted">${label}…</p>`;
+      const r = await postJSON(url, body);
+      if (r.error) { out.innerHTML = `<p class="err">${esc(r.error)}</p>`; return null; }
+      return r;
+    };
+    document.querySelectorAll("[data-aitab]").forEach(b => b.onclick = async () => {
+      document.querySelectorAll("[data-aitab]").forEach(x => x.classList.toggle("on", x === b));
+      $("#ai-chatbar").style.display = b.dataset.aitab === "chat" ? "" : "none";
+      if (b.dataset.aitab === "correlate") { const r = await run("/api/ai/correlate", {}, "Correlating findings"); if (r) out.innerHTML = aiBlock(r); }
+      if (b.dataset.aitab === "recommend") { const r = await run("/api/ai/recommend", {}, "Thinking about next tests"); if (r) out.innerHTML = aiBlock(r); }
+      if (b.dataset.aitab === "chat") out.innerHTML = `<p class="muted">Ask about the traffic and findings.</p>`;
+    });
+    const send = async () => {
+      const q = $("#ai-q").value.trim(); if (!q) return;
+      history.push({ role: "user", content: q });
+      out.innerHTML = renderChat(history) + `<p class="muted">Thinking…</p>`;
+      $("#ai-q").value = "";
+      const r = await postJSON("/api/ai/chat", { history: history.slice(0, -1), question: q, context: $("#ai-ctx").checked });
+      if (r.error) { out.innerHTML = renderChat(history) + `<p class="err">${esc(r.error)}</p>`; return; }
+      history.push({ role: "assistant", content: r.text });
+      out.innerHTML = renderChat(history);
+      if (r.meta) out.innerHTML += `<p class="aimeta">${esc(r.meta.route || "")}</p>`;
+      out.scrollTop = out.scrollHeight;
+    };
+    $("#ai-send").onclick = send;
+    $("#ai-q").onkeydown = e => { if (e.key === "Enter") send(); };
+  }
+
+  function renderChat(history) {
+    return history.map(m => `<div class="aimsg ${m.role}"><span class="airole">${m.role === "user" ? "You" : "AI"}</span><div>${md(m.content)}</div></div>`).join("");
+  }
+
+  function aiBlock(r) {
+    return `<div class="aimsg assistant"><div>${md(r.text)}</div></div>` + (r.meta ? `<p class="aimeta">${esc(r.meta.route || "")}</p>` : "");
+  }
+
+  async function openAISettings() {
+    const cfg = await (await fetch("/api/ai/config")).json();
+    renderAISettings(cfg);
+  }
+
+  function renderAISettings(cfg) {
+    const presetOpts = (cfg.presets || []).map(p => `<option value="${esc(p.kind)}" data-base="${esc(p.baseURL)}" data-key="${p.needKey}" data-models="${esc((p.models || []).join(','))}">${esc(p.name)}</option>`).join("");
+    const providers = (cfg.config.providers || []);
+    const provRows = providers.map((p, i) => `
+      <div class="aiprov" data-i="${i}">
+        <input class="p-name" value="${esc(p.name)}" placeholder="Name">
+        <select class="p-kind">${presetOpts}</select>
+        <input class="p-base mono" value="${esc(p.baseURL)}" placeholder="Base URL">
+        <input class="p-key mono" value="${esc(p.apiKey === 'set' ? '' : (p.apiKey || ''))}" placeholder="${p.apiKey === 'set' ? 'key saved — leave blank to keep' : 'API key (blank for local)'}" type="password">
+        <input class="p-models mono" value="${esc((p.models || []).join(', '))}" placeholder="models, comma-separated">
+        <button type="button" class="link p-del">remove</button>
+      </div>`).join("");
+    const taskRows = (cfg.tasks || []).map(t => {
+      const tr = (cfg.config.tasks || {})[t.id] || {};
+      const provOpts = `<option value="">(auto)</option>` + providers.map(p => `<option value="${esc(p.id)}" ${tr.provider === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+      return `<div class="aitask" data-task="${esc(t.id)}">
+        <div class="aitask-name" title="${esc(t.detail)}">${esc(t.name)}</div>
+        <select class="t-prov">${provOpts}</select>
+        <input class="t-model mono" value="${esc(tr.model || '')}" placeholder="model (optional)">
+      </div>`;
+    }).join("");
+    $("#modal").innerHTML = `<div class="overlay" data-backdrop><div class="modal wide">
+      <header class="mh"><h2>AI settings</h2><button type="button" class="x" data-close title="Close (Esc)">✕</button></header>
+      <div class="scanform">
+        <label class="scanck"><input type="checkbox" id="ai-enabled" ${cfg.config.enabled ? "checked" : ""}> Enable AI features</label>
+        <h3>Providers</h3>
+        <div id="ai-provs">${provRows}</div>
+        <button type="button" id="ai-addprov" class="tool">Add provider</button>
+        <h3>Model per task <span class="muted">(fallback to the first provider when unset)</span></h3>
+        <div id="ai-tasks">${taskRows}</div>
+        <h3>MCP server <span class="muted">(let an external AI agent drive Sift)</span></h3>
+        <div id="ai-mcp" class="aimcp"><p class="muted">Loading connection details…</p></div>
+        <div class="scanform-actions">
+          <button type="button" class="tool" data-close>Cancel</button>
+          <button type="button" id="ai-save" class="btn primary">Save</button>
+        </div>
+      </div></div></div>`;
+    providers.forEach((p, i) => { const sel = document.querySelector(`.aiprov[data-i="${i}"] .p-kind`); if (sel) sel.value = p.kind || "openai"; });
+    $("#ai-addprov").onclick = () => {
+      const presets = cfg.presets || [];
+      const next = { id: "p" + Date.now(), name: "OpenAI", kind: "openai", baseURL: (presets[0] || {}).baseURL || "", apiKey: "", models: (presets[0] || {}).models || [] };
+      cfg.config.providers = providers.concat([next]);
+      renderAISettings(cfg);
+    };
+    document.querySelectorAll(".p-del").forEach((b, i) => b.onclick = () => { cfg.config.providers.splice(i, 1); renderAISettings(cfg); });
+    document.querySelectorAll(".p-kind").forEach(sel => sel.onchange = () => {
+      const o = sel.selectedOptions[0], row = sel.closest(".aiprov");
+      if (o.dataset.base) row.querySelector(".p-base").value = o.dataset.base;
+      if (o.dataset.models) row.querySelector(".p-models").value = o.dataset.models.split(",").join(", ");
+    });
+    $("#ai-save").onclick = () => saveAISettings(providers);
+    fetch("/api/mcp/info").then(r => r.json()).then(info => {
+      const el = $("#ai-mcp"); if (!el) return;
+      const sample = JSON.stringify({ mcpServers: { sift: { url: info.url, headers: { Authorization: "Bearer " + info.token } } } }, null, 2);
+      el.innerHTML = `
+        <div class="aimcp-row"><span class="muted">Endpoint</span><code>${esc(info.url)}</code><button type="button" class="link" data-copy="${esc(info.url)}">copy</button></div>
+        <div class="aimcp-row"><span class="muted">Token</span><code>${esc(info.token)}</code><button type="button" class="link" data-copy="${esc(info.token)}">copy</button></div>
+        <details><summary class="muted">Client config example</summary><pre class="ev-snip">${esc(sample)}</pre></details>`;
+      el.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copy(b.dataset.copy));
+    });
+  }
+
+  async function saveAISettings(prev) {
+    const provs = [...document.querySelectorAll(".aiprov")].map((row, i) => ({
+      id: (prev[i] && prev[i].id) || "p" + Date.now() + i,
+      name: row.querySelector(".p-name").value.trim(),
+      kind: row.querySelector(".p-kind").value,
+      baseURL: row.querySelector(".p-base").value.trim(),
+      apiKey: row.querySelector(".p-key").value,
+      models: row.querySelector(".p-models").value.split(",").map(x => x.trim()).filter(Boolean),
+    }));
+    const tasks = {};
+    document.querySelectorAll(".aitask").forEach(row => {
+      const prov = row.querySelector(".t-prov").value;
+      if (prov) tasks[row.dataset.task] = { provider: prov, model: row.querySelector(".t-model").value.trim(), fallbacks: [] };
+    });
+    const out = await postJSON("/api/ai/config", { enabled: $("#ai-enabled").checked, providers: provs, tasks });
+    if (out.error) { toast(out.error); return; }
+    closeModal();
+  }
+
+  async function verifyFinding(id, host) {
+    host.innerHTML = `<p class="muted">Asking the AI…</p>`;
+    const r = await postJSON("/api/ai/verify/" + id, {});
+    host.innerHTML = r.error ? `<p class="err">${esc(r.error)}</p>` : md(r.text);
   }
 
   async function openActive() {
@@ -182,17 +360,20 @@ const Scan = (() => {
         <h2>${esc(f.title)}</h2>
         <div class="finding-loc mono">${f.method ? esc(f.method) + " " : ""}${esc(f.url || f.host)}</div>
         ${f.param ? `<div class="muted">Insertion point: <b>${esc(f.param)}</b> (${esc(f.where || "")})</div>` : ""}
+        ${f.aiTriage ? `<div class="aitriage"><span class="tagbadge ai">AI</span> ${esc(f.aiTriage)}</div>` : ""}
         <p>${esc(f.detail)}</p>
         ${f.payload ? `<div class="finding-sec"><h3>Payload</h3><pre class="ev-snip">${esc(f.payload)}</pre></div>` : ""}
         ${ev ? `<div class="finding-sec"><h3>Evidence</h3>${ev}</div>` : ""}
         ${repro ? `<div class="finding-sec"><h3>Reproduction</h3><ol>${repro}</ol></div>` : ""}
         ${f.remediation ? `<div class="finding-sec"><h3>Remediation</h3><p>${esc(f.remediation)}</p></div>` : ""}
+        <div class="finding-sec"><button type="button" id="f-verify" class="tool">Verify with AI</button><div id="f-verify-out" class="aiout"></div></div>
       </div>`;
     el.querySelectorAll(".ev-flow").forEach(a => a.onclick = e => {
       e.preventDefault();
       switchView("traffic");
       if (window.select) select(+a.dataset.flow);
     });
+    const vb = $("#f-verify"); if (vb) vb.onclick = () => verifyFinding(id, $("#f-verify-out"));
   }
 
   function renderJobs() {

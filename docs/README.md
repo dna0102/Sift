@@ -208,6 +208,35 @@ reproduction steps and the remediation, with a link back to the exact request in
 inspector. Severity runs critical / high / medium / low / info and confidence runs certain /
 firm / tentative, the way a tester would rank them.
 
+## AI
+
+Sift can hand its findings and traffic to a language model to triage, correlate and suggest
+next steps. It talks to several kinds of provider over plain HTTP: anything OpenAI-compatible
+(OpenAI itself, and local servers like Ollama or vLLM through their `/v1` endpoint), Anthropic
+Claude, and Google Gemini. A provider needs a name, a base URL, an API key where the service
+wants one, and a list of model names. Local servers that need no key work the same way — point
+the base URL at `http://localhost:11434/v1` and leave the key blank.
+
+Each task can use a different model, with fallbacks. **Triage** judges every finding as
+confirmed, likely, a false positive, or needing verification, and writes a short note back onto
+the finding. **Correlate** looks across findings and traffic for issues that chain into
+something bigger. **Recommend** names the attack surface worth focusing on and the next tests to
+run. **Verify** reasons about one finding and how to prove it. **Chat** answers questions about
+what Sift has seen. When a task has no model set it falls back to the first provider.
+
+Keys live in `ai.json` under `%USERPROFILE%\.sift`, never in the project, and are never sent
+anywhere except the provider you configured.
+
+### MCP
+
+Sift exposes an MCP server so an external AI agent can read its results and drive it. It speaks
+JSON-RPC over `http://127.0.0.1:<ui-port>/mcp`, gated by a token shown in AI settings. The tools
+cover listing and reading findings and captured requests, scan statistics and job status,
+running passive analysis, and starting or stopping an active scan against named in-scope hosts.
+An agent can therefore scan, read the evidence, correlate it and come back with verified,
+prioritised findings. The endpoint only listens on localhost and refuses any request without the
+token.
+
 ## Code
 
 ```
@@ -253,9 +282,15 @@ internal/scan/          engine.go       the scan engine, jobs and the passive-on
                         discover.go     content discovery and parameter mining
                         request.go      the Requester the engine sends through
                         signatures.go   shared detection regexes
+internal/ai/            provider.go     OpenAI-compatible, Anthropic and Gemini HTTP clients
+                        manager.go      provider config, per-task routing and fallbacks
+                        analyze.go      triage, correlate, recommend, verify and chat
+internal/mcp/           server.go       the MCP JSON-RPC endpoint and its token
+                        tools.go        the MCP tools: read findings/flows, run scans
 internal/ui/            web.go          dashboard server and API
                         web_sender.go   Sender API
                         web_scan.go     Scan API and the findings event stream
+                        web_ai.go       AI triage, correlate, recommend, verify and chat
                         web_mobile.go   Apps API
                         web_emulator.go emulator API
                         render.go       detail-pane HTML (bodies, highlighting, timing)
@@ -263,7 +298,7 @@ internal/ui/            web.go          dashboard server and API
                         codegen.go      copy as cURL / PowerShell / Python / Go / fetch
                         highlight.go    source highlighter for the decompiled-code viewer
                         web/            index.html, app.css, modals.html, app.js (traffic),
-                                        sender.js (Sender), jar.js (Jar), scan.js (Scan),
+                                        sender.js (Sender), jar.js (Jar), scan.js (Scan + AI),
                                         apps.js (Apps)
 ```
 

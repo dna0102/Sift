@@ -20,6 +20,8 @@ Thumbs.db
 /.sift/
 /config.json
 /sender.json
+/ai.json
+/mcp.token
 .env
 .env.*
 

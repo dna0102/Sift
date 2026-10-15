@@ -10,17 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"sift/internal/ai"
 	"sift/internal/apk"
 	"sift/internal/ca"
 	"sift/internal/core"
 	"sift/internal/emulator"
+	"sift/internal/mcp"
 	"sift/internal/proxy"
 	"sift/internal/scan"
 	"sift/internal/sender"
 	"sift/internal/sysproxy"
 )
 
-const Version = "2.1.0"
+const Version = "2.2.0"
 
 type App struct {
 	Cfg       *core.Config
@@ -35,6 +37,8 @@ type App struct {
 	Emulator  *emulator.Emulator
 	Sender    *sender.Sender
 	Scanner   *scan.Engine
+	AI        *ai.Manager
+	MCP       *mcp.Server
 	ProxyPort int
 	UIPort    int
 	Home      string

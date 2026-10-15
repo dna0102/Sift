@@ -89,6 +89,19 @@ func (s *Store) Get(id string) *Finding {
 	return s.findings[id]
 }
 
+func (s *Store) Annotate(id, text string) bool {
+	s.mu.Lock()
+	f, ok := s.findings[id]
+	if ok {
+		f.AITriage = text
+	}
+	s.mu.Unlock()
+	if ok {
+		s.mark(id)
+	}
+	return ok
+}
+
 func (s *Store) All() []*Finding {
 	s.mu.RLock()
 	out := make([]*Finding, 0, len(s.order))

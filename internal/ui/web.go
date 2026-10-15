@@ -74,6 +74,11 @@ func NewUI(app *sift.App) *UI {
 
 	u.senderRoutes(m)
 	u.scanRoutes(m)
+	u.aiRoutes(m)
+	m.HandleFunc("/mcp", u.app.MCP.Handler())
+	m.HandleFunc("GET /api/mcp/info", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d/mcp", u.app.UIPort), "token": u.app.MCP.Token()})
+	})
 
 	m.HandleFunc("GET /api/emulator/status", u.emuStatus)
 	m.HandleFunc("GET /api/emulator/devices", u.emuDevices)
@@ -108,7 +113,7 @@ func (u *UI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == http.MethodPost && r.Header.Get("X-Sift") != "1" && !strings.HasPrefix(r.URL.Path, "/export/") {
+	if r.Method == http.MethodPost && r.Header.Get("X-Sift") != "1" && !strings.HasPrefix(r.URL.Path, "/export/") && r.URL.Path != "/mcp" {
 		http.Error(w, "missing X-Sift header", http.StatusForbidden)
 		return
 	}

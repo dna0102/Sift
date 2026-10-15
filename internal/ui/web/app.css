@@ -481,3 +481,31 @@ table.src .k { color: var(--k); } table.src .s { color: var(--s); } table.src .n
 .scancat legend { font-size: 11px; color: var(--muted); text-transform: capitalize; padding: 0 4px; }
 .scanck { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); padding: 2px 0; }
 .scanform-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.tagbadge.ai { color: var(--accent); border: 1px solid var(--accent); }
+.aitriage { padding: 8px 10px; margin: 8px 0; background: color-mix(in srgb, var(--accent) 8%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 6px; font-size: 12px; }
+.aipanel { display: flex; flex-direction: column; min-height: 0; max-height: 78vh; }
+.aitabs { display: flex; gap: 4px; padding: 10px 14px 0; }
+.aitabs button { padding: 5px 12px; border: 1px solid var(--line2); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--panel); color: var(--text); }
+.aitabs button.on { background: var(--bg); border-color: var(--accent); }
+.aiout { flex: 1; overflow-y: auto; padding: 12px 16px; border-top: 1px solid var(--line); min-height: 160px; }
+.aiout h3, .aiout h4 { margin: 10px 0 4px; }
+.aiout ul { margin: 4px 0 4px 18px; }
+.aiout code { background: var(--code); padding: 0 3px; border-radius: 3px; }
+.aichatbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.aichatbar #ai-q { flex: 1; height: 30px; padding: 0 9px; border: 1px solid var(--line2); border-radius: 6px; background: var(--bg); color: var(--text); }
+.aimsg { margin-bottom: 12px; }
+.aimsg .airole { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.aimsg.user { opacity: .85; }
+.aimeta { font-size: 10px; color: var(--muted); }
+.err { color: var(--c5); }
+.aiprov { display: grid; grid-template-columns: 1fr 1fr 1.4fr 1.2fr 1.4fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.aiprov input, .aiprov select { height: 28px; padding: 0 7px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg); color: var(--text); min-width: 0; }
+.aitask { display: grid; grid-template-columns: 140px 1fr 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+.aitask select, .aitask input { height: 28px; padding: 0 7px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg); color: var(--text); }
+.aitask-name { font-size: 12px; }
+
+.aimcp { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.aimcp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.aimcp-row code { flex: 1; overflow: hidden; text-overflow: ellipsis; background: var(--code); padding: 2px 6px; border-radius: 4px; }
+.aimcp details { margin-top: 6px; }
