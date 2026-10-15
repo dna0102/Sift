@@ -7,12 +7,14 @@
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/app.css">
 <script src="/app.js" defer></script>
+<script src="/sender.js" defer></script>
 <script src="/apps.js" defer></script>
 </head>
 <body>
 <header class="bar">
   <div class="viewtabs">
     <button id="view-traffic" class="vt on" data-view="traffic">Traffic</button>
+    <button id="view-sender" class="vt" data-view="sender" title="Edit and resend any request">Sender</button>
     <button id="view-apps" class="vt" data-view="apps" title="Analyse an APK or IPA">Apps</button>
   </div>
   <span class="sep"></span>
@@ -104,6 +106,40 @@
     </div>
     <div class="gutter h" data-resize="detail"></div>
     <div id="detail"><p class="placeholder">Select a request.</p></div>
+  </section>
+
+  <section id="sendview" hidden>
+    <div id="sendtabs" class="sendtabs"></div>
+    <div class="sendbar">
+      <label class="sb">Target<input id="send-target" class="mono" spellcheck="false" placeholder="https://example.com"></label>
+      <label class="sb">Route<select id="send-route"></select></label>
+      <button id="send-routes" class="tool icon" title="Add or edit routes">⚙</button>
+      <label class="tool switch" title="Set Content-Length from the body you typed"><input type="checkbox" id="send-cl" checked><span>Update Content-Length</span></label>
+      <span class="grow"></span>
+      <span id="send-meta" class="muted sendmeta"></span>
+      <button id="send-go" class="btn primary" title="Ctrl+Enter">Send ▸</button>
+    </div>
+    <div class="sendpanes">
+      <div class="sendpane">
+        <div class="tabs"><span class="pane-name">Request</span><span class="muted">raw HTTP — edit anything</span></div>
+        <textarea id="send-raw" class="sendraw mono" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+      </div>
+      <div class="sendpane">
+        <div class="tabs" id="sendmodes">
+          <span class="pane-name">Response</span>
+          <button data-sres="raw" class="on">Raw</button>
+          <button data-sres="pretty">Pretty</button>
+          <button data-sres="headers">Headers</button>
+          <button data-sres="render">Render</button>
+          <button data-sres="diff" title="Compare with the previous send">Diff</button>
+          <span class="grow"></span>
+          <button id="send-copy">Copy</button>
+          <button id="send-inspect" title="Open this send in the Traffic inspector">Inspect ▸</button>
+        </div>
+        <div id="send-res" class="sendres"><p class="placeholder">Send the request to see the response.</p></div>
+      </div>
+    </div>
+    <div id="sendhist" class="sendhist"></div>
   </section>
 
   <section id="appview" hidden>

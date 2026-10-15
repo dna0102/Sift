@@ -39,6 +39,7 @@ func NewUI(app *App) *UI {
 	m.HandleFunc("GET /{$}", u.static("web/index.html", "text/html; charset=utf-8"))
 	m.HandleFunc("GET /app.js", u.static("web/app.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /apps.js", u.static("web/apps.js", "text/javascript; charset=utf-8"))
+	m.HandleFunc("GET /sender.js", u.static("web/sender.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /app.css", u.static("web/app.css", "text/css; charset=utf-8"))
 	m.HandleFunc("GET /favicon.svg", u.static("web/favicon.svg", "image/svg+xml"))
 
@@ -64,6 +65,8 @@ func NewUI(app *App) *UI {
 	m.HandleFunc("POST /api/apps/analyse", u.appAnalyse)
 	m.HandleFunc("POST /api/apps/reports/{id}/delete", u.appDeleteReport)
 	m.HandleFunc("POST /api/apps/jadx", u.appEnsureJadx)
+
+	u.senderRoutes(m)
 
 	// emulator
 	m.HandleFunc("GET /api/emulator/status", u.emuStatus)

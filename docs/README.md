@@ -36,9 +36,51 @@ Flags only apply to that run. Settings, rules and the certificate live in `%USER
 - Filter box: plain text, or `method:POST status:4xx host:api path:/v1 type:json app:chrome body:token`, `-word` to exclude.
 - Inspector: headers, query, cookies, body (JSON tree, pretty, form, multipart, GraphQL, image/video/HTML preview, text, hex), raw message, timing breakdown, WebSocket messages.
 - Tools: breakpoints (pause, edit, continue or abort requests and responses), Map Local, Map Remote, Block List, Allow List, Rewrite (headers, body text, status), HTTPS include/exclude lists, network throttling, no-cache mode.
-- Replay, edit and resend, compose new requests. Copy as cURL, PowerShell, Python, Go or fetch.
+- Replay, edit and resend, compose new requests, or open any request in the **Sender** (below). Copy as cURL, PowerShell, Python, Go or fetch.
 - Export HAR (streamed to disk, so large captures don't run out of memory), Postman collections; import HAR.
-- Keys: `↑ ↓` move · `/` filter · `Ctrl+K` clear · `Ctrl+E` pause recording · `R` replay · `E` edit · `Del` delete · `Esc` close.
+- Keys: `↑ ↓` move · `/` filter · `Ctrl+K` clear · `Ctrl+E` pause recording · `R` replay · `E` edit · `S` send to Sender · `Del` delete · `Esc` close.
+- Right-click any request for replay, Sender, copy-as-code, breakpoint, map-local, block and don't-decrypt in one menu.
+
+## Sender
+
+The **Sender** tab is a request workbench: take anything you captured, change any part of it,
+and send it again — as many times as you like, down whichever path you choose.
+
+Open it with the **Sender ▸** button in the detail pane, right-click → *Send to Sender*, or the
+`S` key. Each request gets its own tab; tabs are named (double-click to rename), kept across
+restarts, and each keeps its own send history.
+
+- **Edit the request as raw HTTP text** — the request line, every header, the body. Nothing is
+  normalised behind your back, so deliberately malformed requests still go out as typed. The
+  `Host` header is sent exactly as written even when it doesn't match the target, which is the
+  point for host-routing tests.
+- **Target** is separate from the request text, so you can point the same request at staging,
+  production or localhost without retyping it. A full `http(s)://…` in the request line wins.
+- **Update Content-Length** (on by default) recomputes it from the body. Turn it off to send a
+  value you typed — it is clamped to the body length, and the Sender tells you when it clamped.
+- `Transfer-Encoding: chunked` is honoured if you type it.
+- **Route** decides how the request leaves this machine:
+
+  | Route | |
+  |---|---|
+  | **Direct** | straight out over this PC's network |
+  | **Through Sift** | back in through Sift's own proxy, so breakpoints, rewrites, Map Local/Remote, blocking and throttling all apply to the resend. The send then shows up twice: once as your Sender row, once as the proxy saw it |
+  | **HTTP / HTTPS proxy** | an upstream proxy, with optional username and password |
+  | **SOCKS5 proxy** | likewise, with RFC 1929 username/password auth. Host names are resolved by the proxy, not locally |
+
+  Each saved route can also pin **Send from** — a local interface address, so you choose Wi-Fi
+  vs Ethernet vs a VPN adapter — plus certificate verification (follow Settings, always verify,
+  or accept anything), redirect following, and a timeout. Routes are saved as named profiles in
+  `%USERPROFILE%\.sift\sender.json` (mode 0600, since they can hold proxy passwords) and never
+  in the project folder.
+- **Response** views: Raw, Pretty (JSON reformatted), Headers, Render (sandboxed preview) and
+  **Diff**, which compares the response line-by-line with the previous send in that tab — so you
+  can see exactly what your edit changed.
+- **History** along the bottom: every send with its status, time and size. Click one to bring
+  its request and response back.
+- **Inspect ▸** jumps to the same send in the Traffic list, where the full inspector — JSON
+  tree, timing breakdown, cookies, hex — works on it like any other request.
+- `Ctrl+Enter` sends.
 
 ## Keeping apps working
 
@@ -109,6 +151,8 @@ All Go source and the embedded dashboard live in `cmd/sift/` (one `package main`
 | `rules.go`, `breakpoints.go` | rule matching, paused requests |
 | `render.go` | the detail pane HTML (bodies, highlighting, timing) |
 | `web.go` | dashboard server and API |
+| `sender.go` | the Sender: raw-HTTP parsing, routes (direct / through Sift / HTTP / SOCKS5), interface binding, send history |
+| `web_sender.go` | dashboard API for the Sender |
 | `har.go`, `codegen.go` | HAR/Postman export and import, copy as code |
 | `decode.go` | gzip/deflate/brotli/zstd decoding, content types |
 | `sysproxy.go`, `platform_*.go` | Windows system proxy, app detection, Store-app and firewall fixes, watchdog |
@@ -121,4 +165,4 @@ All Go source and the embedded dashboard live in `cmd/sift/` (one `package main`
 | `plist.go` | Apple property-list reader (binary + XML) for IPAs |
 | `highlight.go` | source highlighter for the decompiled-code viewer |
 | `web_mobile.go` | dashboard API for the Apps view |
-| `web/` | `index.html`, `app.css`, `app.js` (traffic view + live updates), `apps.js` (Apps view), `modals.html` (dialogs) |
+| `web/` | `index.html`, `app.css`, `app.js` (traffic view + live updates), `sender.js` (Sender view), `apps.js` (Apps view), `modals.html` (dialogs) |

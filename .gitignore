@@ -30,3 +30,6 @@ sender.json
 *.postman_collection.json
 .env
 .env.*
+
+# local Claude Code tool permissions
+.claude/settings.local.json

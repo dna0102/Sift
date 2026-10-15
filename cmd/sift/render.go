@@ -138,6 +138,7 @@ func RenderDetail(f *Flow, o DetailOpts, app *App) string {
 	}
 	b.WriteString(`<span class="grow"></span>`)
 	if s.Kind == "http" {
+		fmt.Fprintf(&b, `<button data-sender="%s" title="Open in the Sender to edit and resend (S)">Sender ▸</button>`, id)
 		fmt.Fprintf(&b, `<button data-post="/api/flows/%s/replay" title="Send again (R)">Replay</button>`, id)
 		fmt.Fprintf(&b, `<button data-modal="/ui/modal/compose?from=%s" title="Edit and send (E)">Edit</button>`, id)
 		b.WriteString(`<details class="menu right"><summary>Copy as</summary><div>`)

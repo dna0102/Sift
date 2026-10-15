@@ -453,16 +453,50 @@ sideList.addEventListener("contextmenu", e => {
     items.push([`Block ${v}…`, () => openModal(`/ui/modal/rules?type=block&host=${encodeURIComponent((kind === "group" ? "*." : "") + v)}`)]);
   }
   items.push(["Delete these requests", () => post("/api/flows/delete", { ids: S.flows.filter(f => inScopeOf(scope, f)).map(f => f.id).join(",") })]);
+  showCtxMenu(e, items);
+});
+
+// items is a list of [label, fn]; a null item draws a separator.
+function showCtxMenu(e, items) {
   ctxMenu.innerHTML = "";
-  for (const [label, fn] of items) {
+  for (const it of items) {
+    if (!it) { ctxMenu.append(document.createElement("hr")); continue; }
+    const [label, fn] = it;
     const b = document.createElement("button");
     b.textContent = label;
     b.onclick = () => { ctxMenu.hidden = true; fn(); };
     ctxMenu.append(b);
   }
   ctxMenu.hidden = false;
-  ctxMenu.style.left = Math.min(e.clientX, innerWidth - 220) + "px";
+  ctxMenu.style.left = Math.min(e.clientX, innerWidth - 230) + "px";
   ctxMenu.style.top = Math.min(e.clientY, innerHeight - ctxMenu.offsetHeight - 8) + "px";
+}
+
+// Right-click a request for the things you'd otherwise hunt for in the detail pane.
+list.addEventListener("contextmenu", e => {
+  const row = e.target.closest(".row");
+  if (!row) return;
+  e.preventDefault();
+  const id = +row.dataset.id, f = S.byId.get(id);
+  if (!f) return;
+  select(id);
+  const url = f.sc + "://" + f.h + (f.po && f.po !== 80 && f.po !== 443 ? ":" + f.po : "") + f.p;
+  const items = [["Send to Sender", () => window.Sender && window.Sender.fromFlow(id)]];
+  if (f.k === "http") {
+    items.push(["Replay as-is", () => post(`/api/flows/${id}/replay`)],
+      ["Edit and send…", () => openModal(`/ui/modal/compose?from=${id}`)]);
+  }
+  items.push(null,
+    ["Copy URL", () => copy(url)],
+    ["Copy as cURL…", () => openModal(`/ui/modal/code?id=${id}&lang=curl`)],
+    null,
+    [`Breakpoint on ${f.h}…`, () => openModal(`/ui/modal/rules?type=breakpoint&from=${id}`)],
+    [`Map local…`, () => openModal(`/ui/modal/rules?type=map_local&from=${id}`)],
+    [`Block ${f.h}`, () => openModal(`/ui/modal/rules?type=block&host=${encodeURIComponent(f.h)}`)],
+    [`Don't decrypt ${f.h}`, () => post("/api/hosts/decrypt", { host: f.h })],
+    null,
+    ["Delete", () => post("/api/flows/delete", { ids: id })]);
+  showCtxMenu(e, items);
 });
 addEventListener("click", e => { if (!ctxMenu.contains(e.target)) ctxMenu.hidden = true; });
 addEventListener("blur", () => { ctxMenu.hidden = true; });
@@ -522,14 +556,16 @@ async function setting(data) {
   applyState(st);
 }
 
-// Switch between the Traffic view and the Apps (APK/IPA analysis) view.
+// Switch between the Traffic, Sender and Apps (APK/IPA analysis) views.
 function switchView(view) {
   S.view_mode = view;
   document.querySelectorAll(".vt").forEach(b => b.classList.toggle("on", b.dataset.view === view));
   $("#content").hidden = view !== "traffic";
   $("#side").hidden = view !== "traffic";
   document.querySelectorAll("main > .gutter.v")[0].hidden = view !== "traffic";
+  $("#sendview").hidden = view !== "sender";
   $("#appview").hidden = view !== "apps";
+  if (view === "sender" && window.Sender) window.Sender.activate();
   if (view === "apps" && window.Apps) window.Apps.activate();
 }
 document.querySelectorAll(".vt").forEach(b => b.onclick = () => switchView(b.dataset.view));
@@ -597,6 +633,8 @@ document.addEventListener("click", async e => {
     if (!d.contains(t) || t.closest("details.menu > div button, details.menu > div a")) d.open = false;
   }
   if (t.matches(".overlay[data-backdrop]") || t.closest("[data-close]")) return closeModal();
+  const snd = t.closest("[data-sender]");
+  if (snd && window.Sender) return window.Sender.fromFlow(+snd.dataset.sender);
   const m = t.closest("[data-modal]");
   if (m) return openModal(m.dataset.modal);
   const p = t.closest("[data-post]");
@@ -654,6 +692,7 @@ document.addEventListener("keydown", e => {
   if (k === "delete" || k === "backspace") post("/api/flows/delete", { ids: S.sel });
   else if (k === "r") post(`/api/flows/${S.sel}/replay`);
   else if (k === "e") openModal(`/ui/modal/compose?from=${S.sel}`);
+  else if (k === "s" && window.Sender) window.Sender.fromFlow(S.sel);
 });
 
 // ------------------------------------------------------------------ resizable panes

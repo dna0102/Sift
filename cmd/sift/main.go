@@ -35,6 +35,7 @@ type App struct {
 	mobile    *MobileStore
 	analyser  *Analyser
 	emulator  *Emulator
+	sender    *Sender
 	proxyPort int
 	uiPort    int
 	home      string
@@ -102,6 +103,7 @@ func main() {
 	app.mobile = NewMobileStore()
 	app.analyser = NewAnalyser(app)
 	app.emulator = NewEmulator(app)
+	app.sender = NewSender(app)
 
 	listenHost := "127.0.0.1"
 	if s.AllowLAN {
