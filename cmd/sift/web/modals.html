@@ -1,0 +1,321 @@
+{{/* Dialogs. Forms inside #modal are posted by app.js and replaced with the response. */}}
+
+{{define "head"}}<header class="mh"><h2>{{.}}</h2><button type="button" class="x" data-close title="Close (Esc)">✕</button></header>{{end}}
+
+{{define "nav"}}
+<nav class="mnav">
+  {{range .Types}}<button type="button" class="{{if eq .Key $.Active}}on{{end}}" data-modal="/ui/modal/rules?type={{.Key}}">{{.Label}}{{with index $.Counts .Key}}<i>{{.}}</i>{{end}}</button>{{end}}
+  <hr>
+  <button type="button" class="{{if eq .Active "ssl"}}on{{end}}" data-modal="/ui/modal/ssl">HTTPS decryption</button>
+  <button type="button" class="{{if eq .Active "throttle"}}on{{end}}" data-modal="/ui/modal/throttle">Throttling</button>
+</nav>
+{{end}}
+
+{{define "msg"}}{{if .}}<p class="note">{{.}}</p>{{end}}{{end}}
+
+{{define "rules"}}
+<div class="overlay" data-backdrop><div class="modal wide">
+  {{template "head" "Tools"}}
+  <div class="msplit">
+    {{template "nav" .}}
+    <div class="mmain">
+      <h3>{{.Title}}</h3>
+      <p class="muted">{{.Help}}</p>
+      {{template "msg" .Msg}}
+      {{if .Rules}}
+      <table class="rules">
+        <tr><th></th><th>Name</th><th>Method</th><th>URL</th><th>Action</th><th></th></tr>
+        {{range .Rules}}
+        <tr class="{{if not .Enabled}}off{{end}}">
+          <td><input type="checkbox" {{if .Enabled}}checked{{end}} data-post="/ui/rules/{{.ID}}/toggle" data-target="modal" title="Enabled"></td>
+          <td>{{if .Name}}{{.Name}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="mono">{{.Method}}</td>
+          <td class="mono">{{.Pattern}}{{if .Regex}} <span class="muted">(regex)</span>{{end}}</td>
+          <td class="muted">{{summary .}}</td>
+          <td class="end">
+            <button type="button" class="link" data-modal="/ui/modal/rules?type={{.Type}}&edit={{.ID}}">Edit</button>
+            <button type="button" class="link" data-post="/ui/rules/{{.ID}}/delete" data-target="modal" data-confirm="Delete this rule?">Delete</button>
+          </td>
+        </tr>
+        {{end}}
+      </table>
+      {{else if not .Edit}}<p class="empty">No rules yet.</p>{{end}}
+      {{if .Edit}}{{template "ruleform" .}}{{else}}<button type="button" class="btn primary" data-modal="/ui/modal/rules?type={{.Active}}&edit=new">Add rule</button>{{end}}
+    </div>
+  </div>
+</div></div>
+{{end}}
+
+{{define "ruleform"}}{{$r := .Edit}}
+<form class="form box" action="/ui/rules/save" method="post">
+  <input type="hidden" name="id" value="{{$r.ID}}">
+  <input type="hidden" name="type" value="{{$r.Type}}">
+  <div class="row2">
+    <label>Name<input name="name" value="{{$r.Name}}" placeholder="Optional"></label>
+    <label>Method<select name="method">{{range $.Methods}}<option {{if eq . $r.Method}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  </div>
+  <label>URL<input name="pattern" value="{{$r.Pattern}}" class="mono" required placeholder="*.example.com or https://api.example.com/v1/*"></label>
+  <label class="check"><input type="checkbox" name="regex" value="1" {{if $r.Regex}}checked{{end}}> Regular expression</label>
+
+  {{if eq $r.Type "breakpoint"}}
+  <label class="check"><input type="checkbox" name="on_request" value="1" {{if $r.OnRequest}}checked{{end}}> Pause requests</label>
+  <label class="check"><input type="checkbox" name="on_response" value="1" {{if $r.OnResponse}}checked{{end}}> Pause responses</label>
+  {{else if eq $r.Type "map_local"}}
+  <div class="row2">
+    <label>Status<input name="status" value="{{$r.Status}}" class="mono"></label>
+    <label>Local file or folder (optional)<input name="file" value="{{$r.File}}" class="mono" placeholder="C:\mocks\user.json"></label>
+  </div>
+  <label>Headers<textarea name="headers" rows="3" class="mono" placeholder="Content-Type: application/json">{{$r.Headers}}</textarea></label>
+  <label>Body<textarea name="body" rows="10" class="mono">{{$r.Body}}</textarea></label>
+  {{else if eq $r.Type "map_remote"}}
+  <label>Send to<input name="to" value="{{$r.To}}" class="mono" placeholder="http://localhost:3000"></label>
+  <label class="check"><input type="checkbox" name="preserve_host" value="1" {{if $r.PreserveHost}}checked{{end}}> Keep the original Host header</label>
+  {{else if eq $r.Type "block"}}
+  <label class="check"><input type="radio" name="action" value="forbid" {{if ne $r.Action "drop"}}checked{{end}}> Reply 403 Forbidden</label>
+  <label class="check"><input type="radio" name="action" value="drop" {{if eq $r.Action "drop"}}checked{{end}}> Drop the connection</label>
+  {{else if eq $r.Type "rewrite"}}
+  <div class="row2">
+    <label>Apply to<select name="target"><option value="request" {{if eq $r.Target "request"}}selected{{end}}>Request</option><option value="response" {{if eq $r.Target "response"}}selected{{end}}>Response</option></select></label>
+    <label>Action<select name="op">
+      <option value="set_header" {{if eq $r.Op "set_header"}}selected{{end}}>Set header</option>
+      <option value="remove_header" {{if eq $r.Op "remove_header"}}selected{{end}}>Remove header</option>
+      <option value="replace_body" {{if eq $r.Op "replace_body"}}selected{{end}}>Replace text in body</option>
+      <option value="set_status" {{if eq $r.Op "set_status"}}selected{{end}}>Set status code</option>
+    </select></label>
+  </div>
+  <div class="row2">
+    <label>Header<input name="key" value="{{$r.Key}}" class="mono"></label>
+    <label>Value / status<input name="value" value="{{$r.Value}}" class="mono"></label>
+  </div>
+  <div class="row2">
+    <label>Find<input name="find" value="{{$r.Find}}" class="mono"></label>
+    <label>Replace with<input name="replace" value="{{$r.Replace}}" class="mono"></label>
+  </div>
+  <label class="check"><input type="checkbox" name="find_regex" value="1" {{if $r.FindRegex}}checked{{end}}> Find is a regular expression</label>
+  {{end}}
+  <div class="actions"><button type="button" class="btn" data-modal="/ui/modal/rules?type={{$r.Type}}">Cancel</button><button class="btn primary">Save</button></div>
+</form>
+{{end}}
+
+{{define "ssl"}}
+<div class="overlay" data-backdrop><div class="modal wide">
+  {{template "head" "Tools"}}
+  <div class="msplit">
+    {{template "nav" .}}
+    <form class="mmain form" action="/ui/ssl" method="post">
+      <h3>HTTPS decryption</h3>
+      {{template "msg" .Msg}}
+      <label class="check"><input type="radio" name="ssl_mode" value="all" {{if eq .S.SSLMode "all"}}checked{{end}}> Decrypt everything except the exclude lists</label>
+      <label class="check"><input type="radio" name="ssl_mode" value="list" {{if eq .S.SSLMode "list"}}checked{{end}}> Only decrypt the include list</label>
+      <label class="check"><input type="radio" name="ssl_mode" value="off" {{if eq .S.SSLMode "off"}}checked{{end}}> Don't decrypt anything</label>
+      <h3>Certificate pinning</h3>
+      <p class="muted">Some apps only accept their server's real certificate and stop working when decrypted. These options let them through untouched so they keep working.</p>
+      <label class="check"><input type="checkbox" name="auto_pass_pinned" value="1" {{if .S.AutoPassPinned}}checked{{end}}> Detect pinning: when an app rejects the certificate, pass that host through from then on</label>
+      <label class="check"><input type="checkbox" name="skip_known_pinned" value="1" {{if .S.SkipKnown}}checked{{end}}> Skip services known to pin <span class="muted" title="{{.Known}}">(Apple, iCloud, WhatsApp, Signal, Dropbox, password managers, Windows Update, Battle.net)</span></label>
+      <div class="row3">
+        <label>Include hosts<textarea name="ssl_include" rows="6" class="mono" placeholder="api.example.com&#10;*.mycompany.dev">{{join .S.SSLInclude}}</textarea></label>
+        <label>Exclude hosts<textarea name="ssl_exclude" rows="6" class="mono" placeholder="*.bank.com">{{join .S.SSLExclude}}</textarea></label>
+        <label>Exclude apps<textarea name="ssl_exclude_apps" rows="6" class="mono" placeholder="Spotify&#10;Steam">{{join .S.SSLExcludeApps}}</textarea></label>
+      </div>
+      <div class="actions"><button class="btn primary">Save</button></div>
+      <h3>Passed through because the app rejects the certificate</h3>
+      {{if .Passed}}
+      <table class="rules">
+        <tr><th>Host</th><th>Why</th><th></th></tr>
+        {{range .Passed}}<tr><td class="mono">{{.Host}}</td><td class="muted">{{.Reason}}</td>
+          <td class="end"><button type="button" class="link" data-post="/ui/pins/forget?host={{.Host}}" data-target="modal">Try decrypting again</button></td></tr>{{end}}
+      </table>
+      <p><button type="button" class="btn" data-post="/ui/pins/clear" data-target="modal">Forget all</button></p>
+      {{else}}<p class="empty">None so far.</p>{{end}}
+    </form>
+  </div>
+</div></div>
+{{end}}
+
+{{define "throttle"}}
+<div class="overlay" data-backdrop><div class="modal wide">
+  {{template "head" "Tools"}}
+  <div class="msplit">
+    {{template "nav" .}}
+    <form class="mmain form" action="/ui/throttle" method="post">
+      <h3>Throttling</h3>
+      <p class="muted">Adds latency and limits bandwidth to simulate a slow network.</p>
+      {{template "msg" .Msg}}
+      {{range .Presets}}
+      <label class="check"><input type="radio" name="preset" value="{{.Key}}" {{if eq .Key $.S.Throttle.Preset}}checked{{end}}> {{.Label}}{{if and .Latency (ne .Key "custom")}} <span class="muted">{{.Latency}} ms · ↓ {{.Down}} · ↑ {{.Up}} kbit/s</span>{{end}}</label>
+      {{end}}
+      <div class="row3">
+        <label>Latency (ms)<input name="latency" value="{{.S.Throttle.Latency}}" class="mono"></label>
+        <label>Download (kbit/s)<input name="down" value="{{.S.Throttle.Down}}" class="mono"></label>
+        <label>Upload (kbit/s)<input name="up" value="{{.S.Throttle.Up}}" class="mono"></label>
+      </div>
+      <label>Only these hosts (optional)<input name="hosts" value="{{.S.Throttle.Hosts}}" class="mono" placeholder="api.example.com *.cdn.com"></label>
+      <div class="actions"><button class="btn primary">Apply</button></div>
+    </form>
+  </div>
+</div></div>
+{{end}}
+
+{{define "settings"}}
+<div class="overlay" data-backdrop><div class="modal">
+  {{template "head" "Settings"}}
+  <form class="form" action="/ui/settings" method="post">
+    {{template "msg" .Msg}}
+    <h3>Proxy</h3>
+    <p class="muted">Proxy on 127.0.0.1:{{.ProxyPort}}, dashboard on 127.0.0.1:{{.UIPort}}. Ports can be changed with <span class="mono">sift -port 9090 -ui-port 9091</span>.</p>
+    <label class="check"><input type="checkbox" name="allow_lan" value="1" {{if .S.AllowLAN}}checked{{end}}> Allow other devices on my network{{if .LAN}} <span class="muted">({{range $i, $a := .LAN}}{{if $i}}, {{end}}{{$a}}:{{$.ProxyPort}}{{end}})</span>{{end}}</label>
+    <label class="check"><input type="checkbox" name="verify_upstream" value="1" {{if .S.VerifyUpstream}}checked{{end}}> Verify server certificates</label>
+    <label class="check"><input type="checkbox" name="no_cache" value="1" {{if .S.NoCache}}checked{{end}}> Disable caching</label>
+    <label class="check"><input type="checkbox" name="show_tunnels" value="1" {{if .S.ShowTunnels}}checked{{end}}> Show connections that aren't decrypted</label>
+    <label>System proxy bypass<input name="bypass" value="{{.S.Bypass}}" class="mono"></label>
+    <h3>Memory</h3>
+    <div class="row3">
+      <label>Max requests<input name="max_flows" value="{{.S.MaxFlows}}" class="mono"></label>
+      <label>Max body (MB)<input name="max_body_mb" value="{{.S.MaxBodyMB}}" class="mono"></label>
+      <label>Max memory (MB)<input name="max_memory_mb" value="{{.S.MaxMemoryMB}}" class="mono"></label>
+    </div>
+    {{if .Windows}}
+    <h3>Microsoft Store apps</h3>
+    <p class="muted">Windows doesn't let Store apps (Mail, Store, Xbox, Spotify from the Store, new Teams…) connect to a proxy on this computer, so they go offline while the system proxy is on. Sift can exempt them (needs administrator; Windows will ask).</p>
+    <p>{{.LoopExempt}} of {{.LoopTotal}} Store apps can reach Sift.
+      {{if lt .LoopExempt .LoopTotal}}<button type="button" class="btn primary" data-post="/ui/compat/loopback-on" data-target="modal" data-busy="Waiting for the administrator prompt…">Allow all Store apps</button>{{end}}
+      <button type="button" class="link" data-post="/ui/compat/loopback-off" data-target="modal">Undo</button></p>
+    {{end}}
+    <h3>Appearance</h3>
+    <div class="inline">
+      <label class="check"><input type="radio" name="theme" value="system" {{if eq .S.Theme "system"}}checked{{end}}> System</label>
+      <label class="check"><input type="radio" name="theme" value="light" {{if eq .S.Theme "light"}}checked{{end}}> Light</label>
+      <label class="check"><input type="radio" name="theme" value="dark" {{if eq .S.Theme "dark"}}checked{{end}}> Dark</label>
+    </div>
+    <h3>Shortcuts</h3>
+    <p class="muted keys"><kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>/</kbd> filter · <kbd>Ctrl K</kbd> clear · <kbd>Ctrl E</kbd> pause recording · <kbd>R</kbd> replay · <kbd>E</kbd> edit · <kbd>Del</kbd> delete · <kbd>Esc</kbd> close</p>
+    <div class="actions"><button class="btn primary">Save</button></div>
+  </form>
+</div></div>
+{{end}}
+
+{{define "cert"}}
+<div class="overlay" data-backdrop><div class="modal">
+  {{template "head" "Certificate"}}
+  <div class="form">
+    <div class="certstate {{if eq .Trusted 1}}ok{{else if eq .Trusted 0}}bad{{end}}">
+      <div><b>{{if eq .Trusted 1}}Trusted on this computer{{else if eq .Trusted 0}}Not trusted yet{{else}}Trust status unknown{{end}}</b>
+        <div class="muted">{{.Subject}} · SHA-1 {{.SHA1}} · expires {{.NotAfter}}</div></div>
+      {{if eq .Trusted 1}}
+      <button type="button" class="btn" data-post="/ui/cert/uninstall" data-target="modal" data-confirm="Remove the Sift certificate? HTTPS decryption stops working.">Remove</button>
+      {{else}}
+      <button type="button" class="btn primary" data-post="/ui/cert/install" data-target="modal" data-busy="Waiting for Windows… click Yes in the security dialog">Install</button>
+      {{end}}
+    </div>
+    {{template "msg" .Msg}}
+    <p class="muted">Sift reads HTTPS by acting as a certificate authority on this computer. The private key stays in {{.Home}}. Remove the certificate when you no longer need it.</p>
+    <p><a class="btn" href="/cert/sift-ca.cer" download>Download .cer</a> <a class="btn" href="/cert/sift-ca.pem" download>Download .pem</a></p>
+    <h3>Other apps</h3>
+    <details><summary>Python, Node.js, curl</summary>
+      <p class="muted">These ignore the Windows proxy and certificate store. In PowerShell:</p>
+      <pre class="code" id="envvars">$env:HTTPS_PROXY = "http://127.0.0.1:{{.ProxyPort}}"
+$env:HTTP_PROXY = "http://127.0.0.1:{{.ProxyPort}}"
+$env:REQUESTS_CA_BUNDLE = "{{.PEM}}"
+$env:SSL_CERT_FILE = "{{.PEM}}"
+$env:NODE_EXTRA_CA_CERTS = "{{.PEM}}"</pre>
+      <p><button type="button" class="btn" data-copy-target="#envvars">Copy</button></p>
+      <p class="muted">Windows curl: <span class="mono">curl -x http://127.0.0.1:{{.ProxyPort}} --ssl-no-revoke https://example.com</span></p>
+    </details>
+    <details><summary>Firefox</summary><p class="muted">Firefox normally trusts the Windows store. If not: Settings → Privacy &amp; Security → View Certificates → Authorities → Import the .pem.</p></details>
+    <details><summary>Phones and other devices</summary><p class="muted">Turn on "Allow other devices" in Settings, set the device's Wi-Fi proxy to this PC on port {{.ProxyPort}}, then open http://sift.cert on the device.</p></details>
+  </div>
+</div></div>
+{{end}}
+
+{{define "devices"}}
+<div class="overlay" data-backdrop><div class="modal">
+  {{template "head" "Phones and other devices"}}
+  <div class="form">
+    {{template "msg" .Msg}}
+    {{if not .S.AllowLAN}}
+    <p>Other devices can't reach Sift yet. Turn on <b>Allow other devices on my network</b> in Settings, then come back here.</p>
+    <p><button type="button" class="btn primary" data-modal="/ui/modal/settings">Open Settings</button></p>
+    {{else}}
+    <h3>1. Point the device at Sift</h3>
+    <p class="muted">In the device's Wi-Fi settings, set the proxy to <b>Automatic</b> with this URL. If Sift isn't running, the device connects directly, so nothing breaks:</p>
+    {{range .LAN}}<p class="mono big" data-copy="http://{{.}}:{{$.ProxyPort}}/proxy.pac" title="Click to copy">http://{{.}}:{{$.ProxyPort}}/proxy.pac</p>{{end}}
+    <p class="muted">Or set it to <b>Manual</b>: server {{range $i, $a := .LAN}}{{if $i}} or {{end}}<span class="mono">{{$a}}</span>{{end}}, port <span class="mono">{{.ProxyPort}}</span>.</p>
+    {{if .Windows}}
+    <p>{{if .Firewall}}Windows Firewall allows other devices to connect.{{else}}<span class="bad">Windows Firewall may block other devices.</span>
+      <button type="button" class="btn" data-post="/ui/compat/firewall" data-target="modal" data-busy="Waiting for the administrator prompt…">Allow through the firewall</button>{{end}}</p>
+    {{end}}
+    <h3>2. Install the certificate on the device</h3>
+    <p class="muted">Open this address in the device's browser and download the certificate:</p>
+    {{range .LAN}}<p class="mono big">http://{{.}}:{{$.ProxyPort}}/</p>{{end}}
+    <details><summary>iPhone / iPad</summary><p class="muted">Download it in Safari, then Settings → General → VPN &amp; Device Management → install the profile, then Settings → General → About → Certificate Trust Settings → turn on "Sift CA".</p></details>
+    <details><summary>Android</summary><p class="muted">Settings → Security → Encryption &amp; credentials → Install a certificate → CA certificate. Chrome and the browser then work. Most Android apps only trust built-in certificates, so their HTTPS stays encrypted; Sift detects that and lets them through so they keep working.</p></details>
+    {{end}}
+  </div>
+</div></div>
+{{end}}
+
+{{define "compose"}}
+<div class="overlay" data-backdrop><div class="modal wide">
+  {{template "head" "Compose"}}
+  <form class="form" action="/ui/compose" method="post">
+    {{if .Error}}<p class="note bad">{{.Error}}</p>{{end}}
+    <div class="urlrow">
+      <select name="method">{{range .Methods}}<option {{if eq . $.Method}}selected{{end}}>{{.}}</option>{{end}}</select>
+      <input name="url" value="{{.URL}}" class="mono" required autofocus spellcheck="false">
+    </div>
+    <label>Headers<textarea name="headers" rows="8" class="mono" spellcheck="false">{{.Headers}}</textarea></label>
+    <label>Body<textarea name="body" rows="10" class="mono" spellcheck="false">{{.Body}}</textarea></label>
+    <div class="actions"><span class="muted">Ctrl+Enter to send</span><button class="btn primary">Send</button></div>
+  </form>
+</div></div>
+{{end}}
+
+{{define "code"}}
+<div class="overlay" data-backdrop><div class="modal wide">
+  {{template "head" "Copy as code"}}
+  <div class="form">
+    <div class="seg">{{range .Langs}}<button type="button" class="{{if eq .Key $.Lang}}on{{end}}" data-modal="/ui/modal/code?id={{$.ID}}&lang={{.Key}}">{{.Label}}</button>{{end}}</div>
+    <pre class="code wrap" id="codeout">{{.Code}}</pre>
+    <div class="actions"><button type="button" class="btn primary" data-copy-target="#codeout">Copy</button></div>
+  </div>
+</div></div>
+{{end}}
+
+{{define "import"}}
+<div class="overlay" data-backdrop><div class="modal">
+  {{template "head" "Import HAR"}}
+  <form class="form" action="/ui/import" method="post" enctype="multipart/form-data">
+    {{if .Msg}}<p class="note bad">{{.Msg}}</p>{{end}}
+    <p class="muted">Load a .har file from Sift, browser DevTools, Proxyman, Charles or Fiddler.</p>
+    <input type="file" name="file" accept=".har,.json" required>
+    <div class="actions"><button class="btn primary">Import</button></div>
+  </form>
+</div></div>
+{{end}}
+
+{{define "breakpoint"}}
+<div class="overlay"><div class="modal wide">
+  <header class="mh"><h2>{{if eq .P.Phase "request"}}Request{{else}}Response{{end}} paused</h2><span class="muted">{{if gt .Count 1}}1 of {{.Count}} · {{end}}rule: {{.P.Rule}}</span></header>
+  <form class="form" action="/ui/breakpoint/{{.P.ID}}" method="post" data-target="bp">
+    {{if eq .P.Phase "request"}}
+    <div class="urlrow">
+      <select name="method">{{range .Methods}}<option {{if eq . $.Method}}selected{{end}}>{{.}}</option>{{end}}</select>
+      <input name="url" value="{{.URL}}" class="mono" spellcheck="false">
+    </div>
+    {{else}}
+    <p class="mono muted">{{.Method}} {{.URL}}</p>
+    <label>Status<input name="status" value="{{.Status}}" class="mono short"></label>
+    {{end}}
+    <label>Headers<textarea name="headers" rows="8" class="mono" spellcheck="false">{{.Headers}}</textarea></label>
+    {{if .Binary}}<p class="muted">Binary body ({{.Size}}) is sent unchanged.</p>
+    {{else}}<input type="hidden" name="edit_body" value="1"><label>Body<textarea name="body" rows="10" class="mono" spellcheck="false">{{.Body}}</textarea></label>{{end}}
+    <div class="actions">
+      <button class="btn" name="action" value="abort">Abort</button>
+      {{if gt .Count 1}}<button class="btn" name="action" value="all">Continue all</button>{{end}}
+      <span class="grow"></span>
+      <button class="btn" name="action" value="continue">Continue</button>
+      <button class="btn primary" name="action" value="execute">Send edited</button>
+    </div>
+  </form>
+</div></div>
+{{end}}

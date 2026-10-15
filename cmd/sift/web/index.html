@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sift</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+<script src="/apps.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <div class="viewtabs">
+    <button id="view-traffic" class="vt on" data-view="traffic">Traffic</button>
+    <button id="view-apps" class="vt" data-view="apps" title="Analyse an APK or IPA">Apps</button>
+  </div>
+  <span class="sep"></span>
+  <button id="rec" class="tool" title="Pause or resume recording (Ctrl+E)"><span class="dot"></span><span class="label">Recording</span></button>
+  <button id="clear" class="tool" title="Clear (Ctrl+K)">Clear</button>
+  <span class="sep"></span>
+  <label class="tool switch" title="Send this computer's traffic through Sift"><input type="checkbox" id="sysproxy"><span>System proxy</span></label>
+  <select id="ssl" class="tool" title="Which HTTPS connections are decrypted">
+    <option value="all">Decrypt HTTPS</option>
+    <option value="list">Decrypt listed hosts</option>
+    <option value="off">Don't decrypt HTTPS</option>
+  </select>
+  <select id="throttle" class="tool" title="Simulate a slow network">
+    <option value="off">No throttling</option>
+    <option value="edge">EDGE</option>
+    <option value="3g">3G</option>
+    <option value="4g">4G / LTE</option>
+    <option value="dsl">DSL</option>
+    <option value="wifi">Wi-Fi</option>
+    <option value="custom">Custom</option>
+  </select>
+  <input id="q" type="search" placeholder="Search everything, or filter   (type a word to match URL + headers + body;  method:POST  status:4xx  host:  type:json  app:  body:)" autocomplete="off" spellcheck="false">
+  <button class="tool" data-modal="/ui/modal/compose">Compose</button>
+  <details class="menu right">
+    <summary class="tool">Tools</summary>
+    <div>
+      <button data-modal="/ui/modal/rules?type=breakpoint">Breakpoints</button>
+      <button data-modal="/ui/modal/rules?type=map_local">Map Local</button>
+      <button data-modal="/ui/modal/rules?type=map_remote">Map Remote</button>
+      <button data-modal="/ui/modal/rules?type=block">Block List</button>
+      <button data-modal="/ui/modal/rules?type=allow">Allow List</button>
+      <button data-modal="/ui/modal/rules?type=rewrite">Rewrite</button>
+      <hr>
+      <button data-modal="/ui/modal/ssl">HTTPS decryption</button>
+      <button data-modal="/ui/modal/throttle">Throttling</button>
+      <hr>
+      <label class="item"><input type="checkbox" id="nocache"> Disable caching</label>
+    </div>
+  </details>
+  <details class="menu right">
+    <summary class="tool">Export</summary>
+    <div>
+      <button id="export-har">HAR (shown requests)</button>
+      <a href="/export/har" download>HAR (everything)</a>
+      <button id="export-postman">Postman collection</button>
+      <hr>
+      <button data-modal="/ui/modal/import">Import HAR…</button>
+    </div>
+  </details>
+  <button class="tool" data-modal="/ui/modal/devices" title="Inspect a phone, tablet or another computer">Devices</button>
+  <button class="tool" data-modal="/ui/modal/cert">Certificate</button>
+  <button class="tool icon" data-modal="/ui/modal/settings" title="Settings">⚙</button>
+</header>
+<div id="banner" hidden>HTTPS can't be read until the Sift certificate is trusted. <button data-modal="/ui/modal/cert">Install it</button></div>
+
+<main>
+  <aside id="side">
+    <input id="sideq" type="search" placeholder="Domains and apps" autocomplete="off" spellcheck="false">
+    <div id="sidelist"></div>
+  </aside>
+  <div class="gutter v" data-resize="side"></div>
+  <section id="content">
+    <nav id="types">
+      <button data-type="" class="on">All</button>
+      <button data-type="json">JSON</button>
+      <button data-type="html">HTML</button>
+      <button data-type="js">JS</button>
+      <button data-type="css">CSS</button>
+      <button data-type="image">Images</button>
+      <button data-type="media">Media</button>
+      <button data-type="font">Fonts</button>
+      <button data-type="ws">WebSocket</button>
+      <button data-type="graphql">GraphQL</button>
+      <button data-type="other">Other</button>
+      <span class="grow"></span>
+      <button data-type="err" class="errs">Errors</button>
+    </nav>
+    <div id="table">
+      <div class="row head">
+        <span data-sort="id">#</span><span data-sort="status">Status</span><span data-sort="method">Method</span>
+        <span data-sort="host">Host</span><span data-sort="path">Path</span><span data-sort="type">Type</span>
+        <span data-sort="size" class="num">Size</span><span data-sort="dur" class="num">Time</span><span data-sort="app">App</span>
+      </div>
+      <div id="list"><div id="spacer"></div></div>
+      <div id="empty" hidden>
+        <p>No traffic yet.</p>
+        <p class="muted">Turn on <b>System proxy</b>, or point an app at <span class="mono" id="proxyaddr">127.0.0.1:9090</span>.</p>
+      </div>
+    </div>
+    <div class="gutter h" data-resize="detail"></div>
+    <div id="detail"><p class="placeholder">Select a request.</p></div>
+  </section>
+
+  <section id="appview" hidden>
+    <aside id="applist">
+      <div class="applist-head">
+        <button id="app-add" class="btn primary">Open APK / IPA…</button>
+        <input id="app-file" type="file" accept=".apk,.ipa,.xapk,.aab" hidden>
+      </div>
+      <div id="app-tools" class="app-tools"></div>
+      <div id="app-reports"></div>
+    </aside>
+    <div class="gutter v" data-resize="applist"></div>
+    <div id="appmain">
+      <div id="appdrop" class="appdrop">
+        <div class="drop-inner">
+          <h2>Analyse a mobile app</h2>
+          <p class="muted">Drop an <b>.apk</b> or <b>.ipa</b> here, or click “Open APK / IPA…”.</p>
+          <p class="muted">Sift decompiles it and maps endpoints, secrets, SSL pinning, and login / register / captcha screens — all statically, nothing is run or sent anywhere.</p>
+        </div>
+      </div>
+      <div id="appreport" hidden></div>
+    </div>
+  </section>
+</main>
+<footer id="status"></footer>
+<div id="modal"></div>
+<div id="bp"></div>
+<div id="toasts"></div>
+</body>
+</html>

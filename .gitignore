@@ -1,0 +1,32 @@
+# build output
+/dist/
+
+# editor / OS cruft
+*.exe~
+*.swp
+*.bak
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Sift runtime data lives in %USERPROFILE%\.sift, never in the project.
+# These patterns are belt-and-braces so captured traffic, keys and settings
+# can never be committed by accident.
+.sift/
+config.json
+sender.json
+*.pem
+*.cer
+*.crt
+*.key
+*.p12
+*.pfx
+*.har
+*.apk
+*.ipa
+*.xapk
+*.aab
+*.postman_collection.json
+.env
+.env.*
