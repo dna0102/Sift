@@ -135,34 +135,42 @@ Best AVD choice: a **non-Play-Store, rooted** image (e.g. a Frida AVD with frida
 
 ## Code
 
-All Go source and the embedded dashboard live in `cmd/sift/` (one `package main`, so the
-`//go:embed web` of the dashboard works). Paths below are relative to `cmd/sift/`.
+```
+cmd/sift/main.go        flags, startup, shutdown
+internal/app/           the App bundle every subsystem is handed, plus replay and compose
+internal/core/          Flow, Store, the live-update Hub, Config/Settings, rules, breakpoints,
+                        body decoding (gzip/deflate/brotli/zstd) and content classification
+internal/proxy/         proxy.go        CONNECT, what to decrypt, rules, streaming, pass-through
+                        clienthello.go  server name and protocols from an app's TLS hello
+                        pins.go         pinning detection and the known-pinned list
+                        upstream.go     connections out (HTTP/1.1, HTTP/2, h2c, legacy TLS)
+                        websocket.go    WebSocket relay and message capture
+internal/ca/            the Sift certificate authority and installing it
+internal/sysproxy/      Windows proxy settings, app-per-connection lookup, Store-app and
+                        firewall fixes, the crash watchdog
+internal/apk/           mobile.go       the APK/IPA analysis engine
+                        mobilestore.go  in-memory report store
+                        scan.go         endpoint/secret/pinning/auth pattern scanner
+                        dexscan.go      dex string scan for apps too big to decompile
+                        axml.go         binary AndroidManifest reader
+                        plist.go        Apple property lists (binary + XML) for IPAs
+                        bundle.go       split-APK bundles
+                        tools.go        downloads and caches jadx on first use
+internal/emulator/      emulator.go     boot an AVD, route it through Sift, install and run
+                        frida.go        pinning bypass: start frida-server, spawn under Frida
+                        unpin.js        the injected unpinning script
+internal/sender/        raw-HTTP parsing, routes (direct / through Sift / HTTP / SOCKS5),
+                        interface binding, send history
+internal/ui/            web.go          dashboard server and API
+                        web_sender.go   Sender API
+                        web_mobile.go   Apps API
+                        web_emulator.go emulator API
+                        render.go       detail-pane HTML (bodies, highlighting, timing)
+                        har.go          HAR and Postman export and import
+                        codegen.go      copy as cURL / PowerShell / Python / Go / fetch
+                        highlight.go    source highlighter for the decompiled-code viewer
+                        web/            index.html, app.css, modals.html,
+                                        app.js (traffic), sender.js (Sender), apps.js (Apps)
+```
 
-| File | |
-|---|---|
-| `main.go` | startup, ports, shutdown, replay/compose |
-| `proxy.go` | the proxy: CONNECT, deciding what to decrypt, rules, streaming, pass-through |
-| `clienthello.go` | reads the server name and protocols from an app's TLS hello |
-| `pins.go` | certificate-pinning detection and the known-pinned list |
-| `upstream.go` | connections to the real servers (HTTP/1.1, HTTP/2, h2c, legacy TLS) |
-| `websocket.go` | WebSocket relay and message capture |
-| `ca.go` | the Sift certificate authority and installing it |
-| `store.go` | captured requests and the live-update hub |
-| `rules.go`, `breakpoints.go` | rule matching, paused requests |
-| `render.go` | the detail pane HTML (bodies, highlighting, timing) |
-| `web.go` | dashboard server and API |
-| `sender.go` | the Sender: raw-HTTP parsing, routes (direct / through Sift / HTTP / SOCKS5), interface binding, send history |
-| `web_sender.go` | dashboard API for the Sender |
-| `har.go`, `codegen.go` | HAR/Postman export and import, copy as code |
-| `decode.go` | gzip/deflate/brotli/zstd decoding, content types |
-| `sysproxy.go`, `platform_*.go` | Windows system proxy, app detection, Store-app and firewall fixes, watchdog |
-| `mobile.go`, `mobilestore.go` | APK/IPA analysis engine and the in-memory report store |
-| `dexscan.go`, `axml.go` | direct dex-string + binary-manifest scan for apps too big to decompile |
-| `emulator.go`, `web_emulator.go` | boot an emulator, route it through Sift, install & run the app |
-| `frida.go`, `web/unpin.js` | SSL-pinning bypass: start frida-server and spawn the app under Frida |
-| `tools.go` | downloads and caches jadx on first use |
-| `scan.go` | the endpoint/secret/pinning/auth pattern scanner |
-| `plist.go` | Apple property-list reader (binary + XML) for IPAs |
-| `highlight.go` | source highlighter for the decompiled-code viewer |
-| `web_mobile.go` | dashboard API for the Apps view |
-| `web/` | `index.html`, `app.css`, `app.js` (traffic view + live updates), `sender.js` (Sender view), `apps.js` (Apps view), `modals.html` (dialogs) |
+The source carries no comments. This file is the explanation.
