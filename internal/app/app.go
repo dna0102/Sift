@@ -166,6 +166,20 @@ func (a *App) Compose(method, rawURL, headers, body string) error {
 	return nil
 }
 
+type scanRequester struct{ s *sender.Sender }
+
+func NewScanRequester(s *sender.Sender) scan.Requester { return scanRequester{s} }
+
+func (a scanRequester) Do(ctx context.Context, r *scan.Request) (*scan.Response, error) {
+	res, err := a.s.Probe(ctx, sender.ProbeReq{Method: r.Method, URL: r.URL, Header: r.Header,
+		Body: r.Body, Route: r.Route, Profile: r.Profile, Tag: r.Tag})
+	if err != nil {
+		return nil, err
+	}
+	return &scan.Response{Status: res.Status, Header: res.Header, Body: res.Body, Proto: res.Proto,
+		Duration: res.Duration, FlowID: res.FlowID, Err: res.Err}, nil
+}
+
 func LANAddresses() []string {
 	var out []string
 	addrs, _ := net.InterfaceAddrs()

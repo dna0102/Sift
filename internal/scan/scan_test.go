@@ -1,7 +1,10 @@
 package scan
 
 import (
+	"context"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,6 +108,119 @@ func TestStoreDedupMerges(t *testing.T) {
 	if len(all[0].Flows) != 2 {
 		t.Errorf("expected 2 merged flows, got %d", len(all[0].Flows))
 	}
+}
+
+type fakeReq struct {
+	flows   *core.Store
+	handler func(*Request) *Response
+}
+
+func (f fakeReq) Do(_ context.Context, r *Request) (*Response, error) {
+	res := f.handler(r)
+	if res == nil {
+		res = &Response{Status: 200, Header: http.Header{}, Body: []byte("ok")}
+	}
+	if res.Header == nil {
+		res.Header = http.Header{}
+	}
+	return res, nil
+}
+
+func seedFlow(s *core.Store, method, scheme, host string, port int, pathWithQuery string) {
+	f := &core.Flow{Kind: "http", Start: time.Now(), End: time.Now(), State: "done", Method: method,
+		Scheme: scheme, Host: host, Port: port, Path: pathWithQuery, Status: 200,
+		ReqHeader: http.Header{}, ResHeader: http.Header{}, Decoded: true}
+	s.Add(f)
+}
+
+func queryVal(rawurl, key string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get(key)
+}
+
+func waitJob(t *testing.T, e *Engine, id string) {
+	t.Helper()
+	for i := 0; i < 400; i++ {
+		if j := e.store.Job(id); j != nil && (j.State == "done" || j.State == "stopped" || j.State == "error") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job %s did not finish", id)
+}
+
+func TestActiveReflectedXSS(t *testing.T) {
+	cfg := core.LoadConfig(".")
+	flows := core.NewStore(cfg)
+	e := NewEngine(flows, cfg)
+	e.SetRequester(fakeReq{flows: flows, handler: func(r *Request) *Response {
+		q := queryVal(r.URL, "q")
+		h := http.Header{}
+		h.Set("Content-Type", "text/html")
+		return &Response{Status: 200, Header: h, Body: []byte("<html><body>results for " + q + "</body></html>"), FlowID: 1}
+	}})
+	seedFlow(flows, "GET", "https", "t.test", 443, "/search?q=hello")
+
+	job, err := e.Start(Options{Scope: Scope{Include: []string{"t.test"}}, Checks: []string{"reflection"},
+		Intensity: IntensityLight, Concurrency: 1, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitJob(t, e, job.ID)
+	if findType(e.store.All(), "xss-reflected") == nil {
+		t.Fatalf("expected reflected XSS finding, got %v", titles(e.store.All()))
+	}
+}
+
+func TestActiveSQLiError(t *testing.T) {
+	cfg := core.LoadConfig(".")
+	flows := core.NewStore(cfg)
+	e := NewEngine(flows, cfg)
+	e.SetRequester(fakeReq{flows: flows, handler: func(r *Request) *Response {
+		id := queryVal(r.URL, "id")
+		body := "<html>product listing</html>"
+		if strings.Contains(id, "'") {
+			body = "You have an error in your SQL syntax; check the manual for MySQL near ''"
+		}
+		h := http.Header{}
+		h.Set("Content-Type", "text/html")
+		return &Response{Status: 200, Header: h, Body: []byte(body)}
+	}})
+	seedFlow(flows, "GET", "https", "shop.test", 443, "/item?id=5")
+
+	job, err := e.Start(Options{Scope: Scope{Include: []string{"shop.test"}}, Checks: []string{"sqli"},
+		Intensity: IntensityLight, Concurrency: 1, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitJob(t, e, job.ID)
+	f := findType(e.store.All(), "sqli")
+	if f == nil {
+		t.Fatalf("expected SQL injection finding, got %v", titles(e.store.All()))
+	}
+	if f.Severity != SevHigh {
+		t.Errorf("sqli should be high, got %s", f.Severity)
+	}
+}
+
+func TestActiveRequiresScope(t *testing.T) {
+	cfg := core.LoadConfig(".")
+	e := NewEngine(core.NewStore(cfg), cfg)
+	e.SetRequester(fakeReq{handler: func(*Request) *Response { return nil }})
+	if _, err := e.Start(Options{Checks: []string{"sqli"}}); err == nil {
+		t.Fatal("expected error when no in-scope host is set")
+	}
+}
+
+func titles(fs []*Finding) []string {
+	var out []string
+	for _, f := range fs {
+		out = append(out, f.Type)
+	}
+	return out
 }
 
 func TestScopeMatching(t *testing.T) {

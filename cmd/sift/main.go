@@ -102,6 +102,7 @@ func main() {
 
 	sift.Emulator = emulator.NewEmulator(sift.Store, sift.Mobile, ca, sift.ProxyPort)
 	sift.Sender = sender.NewSender(home, cfg, sift.Store, sift.ProxyPort)
+	sift.Scanner.SetRequester(app.NewScanRequester(sift.Sender))
 
 	sift.Proxy = proxy.NewProxy(cfg, sift.Store, ca, sift.Bps, sift.ProxyPort, sift.UIPort)
 	sift.Proxy.EmulatorApp = sift.Emulator.EmulatorApp

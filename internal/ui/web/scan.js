@@ -33,6 +33,86 @@ const Scan = (() => {
     const pass = $("#scan-passive"); if (pass) pass.onclick = () => post("/api/scan/passive");
     const clear = $("#scan-clear"); if (clear) clear.onclick = () => post("/api/scan/clear");
     const stop = $("#scan-stop"); if (stop) stop.onclick = () => post("/api/scan/stop");
+    const active = $("#scan-active"); if (active) active.onclick = openActive;
+  }
+
+  async function openActive() {
+    const cfg = await (await fetch("/api/scan/config")).json();
+    const hosts = (cfg.hosts || []).map(h => esc(h)).join("\n");
+    const routes = (cfg.routes || []).map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");
+    const profiles = profileOptions(cfg.profiles);
+    const cats = {};
+    for (const c of cfg.checks || []) (cats[c.category] = cats[c.category] || []).push(c);
+    const checkHTML = Object.keys(cats).map(cat => `
+      <fieldset class="scancat"><legend>${esc(cat)}</legend>` +
+      cats[cat].map(c => `<label class="scanck"><input type="checkbox" data-check="${esc(c.id)}" ${c.default ? "checked" : ""}> ${esc(c.name)}</label>`).join("") +
+      `</fieldset>`).join("");
+    const modal = $("#modal");
+    modal.innerHTML = `<div class="overlay" data-backdrop><div class="modal wide">
+      <header class="mh"><h2>Active scan</h2><button type="button" class="x" data-close title="Close (Esc)">✕</button></header>
+      <div class="scanform">
+        <div class="scanform-row">
+          <label class="scanlbl">In-scope hosts <span class="muted">(one per line, * wildcards)</span>
+            <textarea id="sc-include" class="mono" rows="4" placeholder="example.com&#10;*.example.com">${hosts}</textarea></label>
+          <label class="scanlbl">Exclude
+            <textarea id="sc-exclude" class="mono" rows="4" placeholder="logout&#10;*.google.com"></textarea></label>
+        </div>
+        <div class="scanform-row">
+          <label class="scanlbl">Intensity
+            <select id="sc-intensity">
+              <option value="light">Light — fewer payloads</option>
+              <option value="normal" selected>Normal</option>
+              <option value="thorough">Thorough</option>
+              <option value="insane">Insane — everything</option>
+            </select></label>
+          <label class="scanlbl">Route <select id="sc-route">${routes}</select></label>
+          <label class="scanlbl">TLS <select id="sc-profile">${profiles}</select></label>
+        </div>
+        <div class="scanform-row">
+          <label class="scanlbl">Max requests/sec <span class="muted">(0 = unlimited)</span><input id="sc-rate" type="number" min="0" value="0"></label>
+          <label class="scanlbl">Concurrency <input id="sc-conc" type="number" min="1" max="64" value="10"></label>
+          <label class="scanlbl">Request budget <input id="sc-budget" type="number" min="0" value="0" placeholder="auto"></label>
+        </div>
+        <div class="scanform-row toggles">
+          <label class="scanck"><input type="checkbox" id="sc-discover" checked> Discover hidden paths & parameters</label>
+          <label class="scanck"><input type="checkbox" id="sc-blind"> Blind / time-based checks</label>
+        </div>
+        <h3>Checks</h3>
+        <div class="scanchecks">${checkHTML}</div>
+        <div class="scanform-actions">
+          <button type="button" class="tool" data-close>Cancel</button>
+          <button type="button" id="sc-start" class="btn primary">Start scan ▸</button>
+        </div>
+      </div>
+    </div></div>`;
+    $("#sc-start").onclick = startActive;
+  }
+
+  async function startActive() {
+    const val = s => ($(s) && $(s).value || "").trim();
+    const lines = s => val(s).split(/[\r\n,]+/).map(x => x.trim()).filter(Boolean);
+    const checks = [...document.querySelectorAll("[data-check]:checked")].map(c => c.dataset.check);
+    const opts = {
+      scope: { include: lines("#sc-include"), exclude: lines("#sc-exclude") },
+      checks,
+      intensity: val("#sc-intensity"),
+      route: val("#sc-route"),
+      profile: $("#sc-profile") && $("#sc-profile").value === "none" ? "" : val("#sc-profile"),
+      rateLimit: +val("#sc-rate") || 0,
+      concurrency: +val("#sc-conc") || 0,
+      maxRequests: +val("#sc-budget") || 0,
+      active: true,
+      discover: $("#sc-discover").checked,
+      blind: $("#sc-blind").checked,
+    };
+    if (!opts.scope.include.length) { toast("Add at least one in-scope host"); return; }
+    const btn = $("#sc-start"); if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+    const res = await fetch("/api/scan/start", { method: "POST", headers: { "X-Sift": "1", "Content-Type": "application/json" }, body: JSON.stringify(opts) });
+    const out = await res.json();
+    const msg = res.headers.get("X-Toast");
+    if (msg) toast(decodeURIComponent(msg.replace(/\+/g, " ")));
+    if (!out.error) closeModal();
+    else if (btn) { btn.disabled = false; btn.textContent = "Start scan ▸"; }
   }
 
   function sorted() {

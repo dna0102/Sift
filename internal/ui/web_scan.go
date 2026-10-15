@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sift/internal/scan"
+	"sift/internal/sender"
 )
 
 func (u *UI) scanRoutes(m *http.ServeMux) {
@@ -16,10 +17,47 @@ func (u *UI) scanRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/scan/checks", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, scan.AllChecks()) })
 	m.HandleFunc("GET /api/scan/stats", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, u.app.Scanner.Store().Stats()) })
 	m.HandleFunc("GET /api/scan/jobs", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, u.app.Scanner.Store().Jobs()) })
+	m.HandleFunc("GET /api/scan/config", u.scanConfig)
 	m.HandleFunc("GET /api/scan/events", u.scanEvents)
 	m.HandleFunc("POST /api/scan/passive", u.scanPassive)
+	m.HandleFunc("POST /api/scan/start", u.scanStart)
 	m.HandleFunc("POST /api/scan/clear", func(w http.ResponseWriter, r *http.Request) { u.app.Scanner.Store().Clear() })
 	m.HandleFunc("POST /api/scan/stop", u.scanStop)
+}
+
+func (u *UI) scanConfig(w http.ResponseWriter, r *http.Request) {
+	hosts := []string{}
+	seen := map[string]bool{}
+	for _, f := range u.app.Store.All() {
+		h := f.Host
+		if h == "" || h == "127.0.0.1" || seen[h] {
+			continue
+		}
+		seen[h] = true
+		hosts = append(hosts, h)
+	}
+	writeJSON(w, map[string]any{
+		"checks":   scan.AllChecks(),
+		"routes":   u.app.Sender.Routes(),
+		"profiles": sender.Profiles(),
+		"hosts":    hosts,
+	})
+}
+
+func (u *UI) scanStart(w http.ResponseWriter, r *http.Request) {
+	var opts scan.Options
+	if err := json.NewDecoder(r.Body).Decode(&opts); err != nil {
+		writeJSON(w, map[string]any{"error": "could not read scan options: " + err.Error()})
+		return
+	}
+	job, err := u.app.Scanner.Start(opts)
+	if err != nil {
+		toast(w, err.Error())
+		writeJSON(w, map[string]any{"error": err.Error()})
+		return
+	}
+	toast(w, "Active scan started")
+	writeJSON(w, job)
 }
 
 func (u *UI) scanFindings(w http.ResponseWriter, r *http.Request) {

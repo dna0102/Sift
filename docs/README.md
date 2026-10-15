@@ -185,11 +185,28 @@ errors, leaked internal addresses and file paths, software-version banners, secr
 in a response, and API paths mined out of scripts. **Analyse captured traffic** replays passive
 analysis over everything already in the list.
 
+**Active scan** sends crafted requests. It will only touch hosts you list as in scope, so it
+never fires at anything you have not named. For each request it finds the insertion points —
+query and body parameters (form and JSON), cookies, and a few headers — takes a baseline of the
+normal response, and then tries each enabled check, comparing what comes back against that
+baseline so a real signal stands out from normal variation. The checks cover reflected XSS,
+SQL injection (error, boolean and time-based), template injection, OS command injection, path
+traversal and local file inclusion, open redirect, SSRF, CRLF/header injection, XXE and NoSQL
+injection. Time-based checks confirm with a second, different delay before reporting, to keep
+false positives down. With **discover** on it also looks for hidden files, directories and
+parameters that are not linked from the traffic it has seen.
+
+Intensity (light → insane) scales how many payloads and how much budget a scan uses; you can
+also set the route, a TLS fingerprint, a request-per-second cap and concurrency. Every request a
+scan sends is a normal row in the Traffic list, tagged `scan`, so each finding links straight to
+the exact request behind it.
+
 Findings collapse by type, host and insertion point, so the same issue on the same parameter is
 one entry with a count rather than a flood. The left list sorts by severity and confidence and
-filters as you type; selecting one shows the detail, the matched evidence, and a link back to the
-exact request in the Traffic inspector. Severity runs critical / high / medium / low / info and
-confidence runs certain / firm / tentative, the way a tester would rank them.
+filters as you type; selecting one shows the detail, the matched evidence, the payload, the
+reproduction steps and the remediation, with a link back to the exact request in the Traffic
+inspector. Severity runs critical / high / medium / low / info and confidence runs certain /
+firm / tentative, the way a tester would rank them.
 
 ## Code
 
@@ -220,6 +237,7 @@ internal/emulator/      emulator.go     boot an AVD, route it through Sift, inst
 internal/sender/        sender.go       raw-HTTP parsing, tabs, routes, send history
                         transport.go    the two transports: Go's net/http, and tls-client for
                                         TLS/HTTP2 fingerprint impersonation
+                        probe.go        the lean send path the scanner drives
                         jar.go          the Jar: redirect walking, cookie collection, search
 internal/scan/          engine.go       the scan engine, jobs and the passive-on-capture hook
                         finding.go      the finding model: severity, confidence, evidence
@@ -227,6 +245,13 @@ internal/scan/          engine.go       the scan engine, jobs and the passive-on
                         scope.go        in-scope hosts, intensity, rate and concurrency options
                         checks.go       the catalogue of checks the UI lists
                         passive.go      the passive analysers
+                        active.go       the active runner: baseline, budget, rate, concurrency
+                        insertion.go    query/body/JSON/cookie/header insertion points
+                        baseline.go     baseline capture and response comparison
+                        payloads.go     the embedded payload library
+                        checks_active.go the active checks and their verification
+                        discover.go     content discovery and parameter mining
+                        request.go      the Requester the engine sends through
                         signatures.go   shared detection regexes
 internal/ui/            web.go          dashboard server and API
                         web_sender.go   Sender API
