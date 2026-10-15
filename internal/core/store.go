@@ -166,6 +166,8 @@ type Store struct {
 	mem   int64
 	cfg   *Config
 	Hub   *Hub
+
+	OnFinish func(*Flow)
 }
 
 func NewStore(cfg *Config) *Store {
@@ -210,6 +212,9 @@ func (s *Store) Finished(f *Flow) {
 	s.mu.Unlock()
 	s.Touch(f)
 	s.Trim()
+	if s.OnFinish != nil {
+		s.OnFinish(f)
+	}
 }
 
 func (s *Store) Get(id int64) *Flow {

@@ -46,6 +46,7 @@ func NewUI(app *sift.App) *UI {
 	m.HandleFunc("GET /apps.js", u.static("web/apps.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /sender.js", u.static("web/sender.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /jar.js", u.static("web/jar.js", "text/javascript; charset=utf-8"))
+	m.HandleFunc("GET /scan.js", u.static("web/scan.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /app.css", u.static("web/app.css", "text/css; charset=utf-8"))
 	m.HandleFunc("GET /favicon.svg", u.static("web/favicon.svg", "image/svg+xml"))
 
@@ -72,6 +73,7 @@ func NewUI(app *sift.App) *UI {
 	m.HandleFunc("POST /api/apps/jadx", u.appEnsureJadx)
 
 	u.senderRoutes(m)
+	u.scanRoutes(m)
 
 	m.HandleFunc("GET /api/emulator/status", u.emuStatus)
 	m.HandleFunc("GET /api/emulator/devices", u.emuDevices)

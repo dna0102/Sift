@@ -15,6 +15,7 @@ import (
 	"sift/internal/core"
 	"sift/internal/emulator"
 	"sift/internal/proxy"
+	"sift/internal/scan"
 	"sift/internal/sender"
 	"sift/internal/sysproxy"
 )
@@ -33,6 +34,7 @@ type App struct {
 	Analyser  *apk.Analyser
 	Emulator  *emulator.Emulator
 	Sender    *sender.Sender
+	Scanner   *scan.Engine
 	ProxyPort int
 	UIPort    int
 	Home      string

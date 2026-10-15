@@ -9,6 +9,7 @@
 <script src="/app.js" defer></script>
 <script src="/sender.js" defer></script>
 <script src="/jar.js" defer></script>
+<script src="/scan.js" defer></script>
 <script src="/apps.js" defer></script>
 </head>
 <body>
@@ -17,6 +18,7 @@
     <button id="view-traffic" class="vt on" data-view="traffic">Traffic</button>
     <button id="view-sender" class="vt" data-view="sender" title="Edit and resend any request">Sender</button>
     <button id="view-jar" class="vt" data-view="jar" title="Walk a page and inspect its cookies">Jar</button>
+    <button id="view-scan" class="vt" data-view="scan" title="Scan for vulnerabilities">Scan</button>
     <button id="view-apps" class="vt" data-view="apps" title="Analyse an APK or IPA">Apps</button>
   </div>
   <span class="sep"></span>
@@ -159,6 +161,38 @@
       <span id="jar-meta" class="muted sendmeta"></span>
     </div>
     <div id="jar-body" class="jarbody"><p class="placeholder">Give it a page and it will fetch it, keep every cookie it is handed, and show what went out and what came back.</p></div>
+  </section>
+
+  <section id="scanview" hidden>
+    <div class="sendbar">
+      <button id="scan-passive" class="btn primary" title="Analyse everything already captured, without sending anything">Analyse captured traffic</button>
+      <button id="scan-stop" class="tool" title="Stop running scans" hidden>Stop</button>
+      <span class="grow"></span>
+      <div id="scan-stats" class="scanstats"></div>
+      <button id="scan-clear" class="tool" title="Clear findings">Clear</button>
+    </div>
+    <div class="scanpanes">
+      <aside id="scan-list" class="scanlist">
+        <div class="scanfilter">
+          <input id="scan-q" type="search" placeholder="Filter findings" autocomplete="off" spellcheck="false">
+          <select id="scan-sevf" title="Minimum severity">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High+</option>
+            <option value="medium">Medium+</option>
+            <option value="low">Low+</option>
+          </select>
+        </div>
+        <div id="scan-items"></div>
+        <div id="scan-empty" class="scanempty">
+          <p>No findings yet.</p>
+          <p class="muted">Capture some traffic, then <b>Analyse captured traffic</b> for passive issues, or run an <b>Active scan</b> against an in-scope host.</p>
+        </div>
+      </aside>
+      <div class="gutter v" data-resize="side"></div>
+      <div id="scan-detail" class="scandetail"><p class="placeholder">Select a finding.</p></div>
+    </div>
+    <div id="scan-jobs" class="scanjobs"></div>
   </section>
 
   <section id="appview" hidden>

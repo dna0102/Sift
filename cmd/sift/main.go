@@ -20,6 +20,7 @@ import (
 	"sift/internal/core"
 	"sift/internal/emulator"
 	"sift/internal/proxy"
+	"sift/internal/scan"
 	"sift/internal/sender"
 	"sift/internal/sysproxy"
 	"sift/internal/ui"
@@ -83,6 +84,8 @@ func main() {
 	sift := &app.App{Cfg: cfg, CA: ca, Sys: sys, Bps: core.NewBreakpoints(), Home: home}
 	sift.Store = core.NewStore(cfg)
 	sift.Store.Hub.StateFn = func() any { return sift.State() }
+	sift.Scanner = scan.NewEngine(sift.Store, cfg)
+	sift.Store.OnFinish = sift.Scanner.Passive
 	sift.Tools = apk.NewTools(home)
 	sift.Mobile = apk.NewMobileStore()
 	sift.Analyser = apk.NewAnalyser(home, sift.Mobile, sift.Tools)

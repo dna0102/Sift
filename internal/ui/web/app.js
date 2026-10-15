@@ -547,9 +547,11 @@ function switchView(view) {
   $("#sendview").hidden = view !== "sender";
   $("#jarview").hidden = view !== "jar";
   $("#appview").hidden = view !== "apps";
+  $("#scanview").hidden = view !== "scan";
   if (view === "sender" && window.Sender) window.Sender.activate();
   if (view === "jar" && window.Jar) window.Jar.activate();
   if (view === "apps" && window.Apps) window.Apps.activate();
+  if (view === "scan" && window.Scan) window.Scan.activate();
 }
 document.querySelectorAll(".vt").forEach(b => b.onclick = () => switchView(b.dataset.view));
 

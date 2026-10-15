@@ -412,3 +412,59 @@ table.src .k { color: var(--k); } table.src .s { color: var(--s); } table.src .n
 .jar-hop > summary i { font-style: normal; color: var(--muted); font-size: 11px; }
 .jar-hop-body { padding: 0 11px 10px; }
 .jar-hop-body h4 { margin: 10px 0 4px; font-size: 11px; color: var(--muted); font-weight: 600; }
+
+#scanview { grid-column: 1 / -1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.scanstats { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.sevchip { padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--line2); }
+.sevchip.critical { background: color-mix(in srgb, var(--c5) 20%, var(--bg)); color: var(--c5); border-color: var(--c5); }
+.sevchip.high { background: color-mix(in srgb, var(--c5) 12%, var(--bg)); color: var(--c5); }
+.sevchip.medium { background: color-mix(in srgb, var(--c4) 14%, var(--bg)); color: var(--c4); }
+.sevchip.low { background: color-mix(in srgb, var(--c3) 12%, var(--bg)); color: var(--c3); }
+.sevchip.info { color: var(--muted); }
+.scanpanes { flex: 1; display: grid; grid-template-columns: var(--side-w) 1px 1fr; min-height: 0; min-width: 0; }
+.scanlist { display: flex; flex-direction: column; min-height: 0; background: var(--panel); overflow: hidden; }
+.scanfilter { display: flex; gap: 5px; padding: 8px; }
+.scanfilter input { flex: 1; min-width: 0; height: 24px; padding: 0 7px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg); }
+.scanfilter select { height: 24px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg); }
+#scan-items { flex: 1; overflow-y: auto; }
+.scanitem { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); text-align: left; cursor: pointer; }
+.scanitem:hover { background: var(--hover); }
+.scanitem.on { background: var(--sel); color: var(--sel-text); }
+.scanitem.on .scanitem-sub, .scanitem.on .conf { color: color-mix(in srgb, var(--sel-text) 75%, transparent); }
+.scanitem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.scanitem-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scanitem-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sevdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
+.sevdot.critical { background: var(--c5); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c5) 30%, transparent); }
+.sevdot.high { background: var(--c5); }
+.sevdot.medium { background: var(--c4); }
+.sevdot.low { background: var(--c3); }
+.sevdot.info { background: var(--muted); }
+.conf { font-size: 10px; color: var(--muted); flex: none; }
+.scanempty { padding: 20px 12px; }
+.scandetail { overflow-y: auto; padding: 0; min-width: 0; }
+.scandetail .placeholder { padding: 20px; color: var(--muted); }
+.finding { padding: 16px 20px; max-width: 900px; }
+.finding-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.finding h2 { font-size: 16px; margin: 0 0 6px; }
+.finding h3 { font-size: 12px; margin: 0 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.finding-sec { margin-top: 16px; }
+.finding-loc { padding: 6px 9px; background: var(--code); border: 1px solid var(--line); border-radius: 5px; margin-bottom: 8px; overflow-x: auto; }
+.sevtag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #fff; }
+.sevtag.critical { background: var(--c5); }
+.sevtag.high { background: color-mix(in srgb, var(--c5) 85%, #000); }
+.sevtag.medium { background: var(--c4); }
+.sevtag.low { background: var(--c3); }
+.sevtag.info { background: var(--muted); }
+.cwe { font-size: 11px; color: var(--muted); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 6px; }
+.tagbadge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--hover); color: var(--muted); }
+.tagbadge.active { color: var(--c4); }
+.evidence { margin-bottom: 10px; }
+.ev-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.ev-flow { font-size: 11px; }
+.ev-snip { padding: 8px 10px; background: var(--code); border: 1px solid var(--line); border-radius: 5px; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; }
+.scanjobs { border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; }
+.scanjob { display: flex; align-items: center; gap: 10px; padding: 5px 10px; font-size: 11px; border-bottom: 1px solid var(--line); }
+.scanjob > span:first-child { min-width: 180px; }
+.jobbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.jobbar > span { display: block; height: 100%; background: var(--accent); transition: width .3s; }

@@ -172,6 +172,25 @@ The **Find** box searches the jar, the `Set-Cookie` headers and both sets of hea
 as plain text or as a regular expression. Results say where each hit came from and on which
 hop. Searching re-runs in the browser as you type, so it is instant once the fetch is done.
 
+## Scan
+
+The **Scan** tab finds web vulnerabilities and reports them as findings, each with a severity,
+a confidence level, the evidence behind it, and how to reproduce and fix it.
+
+It works in two ways. **Passive** analysis runs on its own over every request Sift records —
+nothing extra is sent. It looks at headers, cookies, CORS, redirects, error pages and served
+JavaScript, and flags things like missing HSTS or CSP, session cookies without Secure or
+HttpOnly, a reflected `Access-Control-Allow-Origin` with credentials, stack traces and SQL
+errors, leaked internal addresses and file paths, software-version banners, secrets echoed back
+in a response, and API paths mined out of scripts. **Analyse captured traffic** replays passive
+analysis over everything already in the list.
+
+Findings collapse by type, host and insertion point, so the same issue on the same parameter is
+one entry with a count rather than a flood. The left list sorts by severity and confidence and
+filters as you type; selecting one shows the detail, the matched evidence, and a link back to the
+exact request in the Traffic inspector. Severity runs critical / high / medium / low / info and
+confidence runs certain / firm / tentative, the way a tester would rank them.
+
 ## Code
 
 ```
@@ -202,8 +221,16 @@ internal/sender/        sender.go       raw-HTTP parsing, tabs, routes, send his
                         transport.go    the two transports: Go's net/http, and tls-client for
                                         TLS/HTTP2 fingerprint impersonation
                         jar.go          the Jar: redirect walking, cookie collection, search
+internal/scan/          engine.go       the scan engine, jobs and the passive-on-capture hook
+                        finding.go      the finding model: severity, confidence, evidence
+                        store.go        findings store with dedup/merge and live push
+                        scope.go        in-scope hosts, intensity, rate and concurrency options
+                        checks.go       the catalogue of checks the UI lists
+                        passive.go      the passive analysers
+                        signatures.go   shared detection regexes
 internal/ui/            web.go          dashboard server and API
                         web_sender.go   Sender API
+                        web_scan.go     Scan API and the findings event stream
                         web_mobile.go   Apps API
                         web_emulator.go emulator API
                         render.go       detail-pane HTML (bodies, highlighting, timing)
@@ -211,7 +238,8 @@ internal/ui/            web.go          dashboard server and API
                         codegen.go      copy as cURL / PowerShell / Python / Go / fetch
                         highlight.go    source highlighter for the decompiled-code viewer
                         web/            index.html, app.css, modals.html, app.js (traffic),
-                                        sender.js (Sender), jar.js (Jar), apps.js (Apps)
+                                        sender.js (Sender), jar.js (Jar), scan.js (Scan),
+                                        apps.js (Apps)
 ```
 
 The source carries no comments. This file is the explanation.
