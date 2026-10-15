@@ -3,6 +3,7 @@
 const Sender = (() => {
   let tabs = [];
   let routes = [];
+  let profiles = [];
   let ifaces = [];
   let cur = "";
   let hist = [];
@@ -15,6 +16,7 @@ const Sender = (() => {
   const pick = () => {
     el.tabs = $("#sendtabs"); el.raw = $("#send-raw"); el.res = $("#send-res");
     el.target = $("#send-target"); el.route = $("#send-route"); el.cl = $("#send-cl");
+    el.profile = $("#send-profile");
     el.meta = $("#send-meta"); el.hist = $("#sendhist"); el.go = $("#send-go");
   };
 
@@ -26,6 +28,8 @@ const Sender = (() => {
   async function loadState() {
     const st = await (await fetch("/api/sender/state")).json();
     tabs = st.tabs || []; routes = st.routes || []; ifaces = st.interfaces || [];
+    profiles = st.profiles || [];
+    el.profile.innerHTML = profileOptions(profiles);
     if (!tabs.some(t => t.id === cur)) cur = tabs.length ? tabs[0].id : "";
     renderTabs(); renderRoutes(); loadTab();
     await loadHistory();
@@ -40,15 +44,23 @@ const Sender = (() => {
     el.target.value = t.target || "";
     el.route.value = t.route || "direct";
     if (!el.route.value) el.route.value = "direct";
+    el.profile.value = t.profile || routeProfile(t.route) || "none";
+    if (!el.profile.value) el.profile.value = "none";
+  }
+
+  function routeProfile(id) {
+    const r = routes.find(x => x.id === id);
+    return r && r.profile ? r.profile : "";
   }
 
   function save() {
     const t = tab();
     if (!t) return;
     t.raw = el.raw.value; t.target = el.target.value; t.route = el.route.value;
+    t.profile = el.profile.value;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => post("/api/sender/tabs/save",
-      { id: t.id, raw: t.raw, target: t.target, route: t.route }), 400);
+      { id: t.id, raw: t.raw, target: t.target, route: t.route, profile: t.profile }), 400);
   }
 
   function renderTabs() {
@@ -103,7 +115,8 @@ const Sender = (() => {
     try {
       const res = await post("/api/sender/send", {
         id: t.id, raw: el.raw.value, target: el.target.value,
-        route: el.route.value, update_cl: el.cl.checked ? "1" : "0",
+        route: el.route.value, profile: el.profile.value,
+        update_cl: el.cl.checked ? "1" : "0",
       });
       const e = await res.json();
       if (e.error) { el.meta.innerHTML = `<span class="bad">${esc(e.error)}</span>`; return; }
@@ -153,6 +166,7 @@ const Sender = (() => {
     if (e.err) bits.push(`<span class="bad">${esc(e.err)}</span>`);
     else bits.push(`<b>${e.status} ${esc(e.reason || "")}</b>`, `${e.dur} ms`, fmtSize(e.size));
     bits.push(esc(e.route));
+    if (e.profile) bits.push("TLS " + esc(e.profile));
     if (e.note) bits.push(`<span class="warn">${esc(e.note)}</span>`);
     if (e.truncated) bits.push(`<span class="warn">shown to 2 MB of ${fmtSize(e.truncated)}</span>`);
     el.meta.innerHTML = bits.join(" · ");
@@ -234,9 +248,10 @@ const Sender = (() => {
         <td>${esc(r.name)}</td>
         <td class="mono">${esc(r.kind)}${r.host ? " " + esc(r.host) + ":" + (r.port || "") : ""}</td>
         <td class="mono">${r.bind ? esc(r.bind) : "any"}</td>
+        <td class="mono">${r.profile ? esc(r.profile) : "—"}</td>
         <td class="end"><button class="link" data-redit="${esc(r.id)}">Edit</button>
           <button class="link bad" data-rdel="${esc(r.id)}">Delete</button></td></tr>`).join("")
-      : `<tr><td colspan="4" class="muted">No saved routes yet. Direct and “Through Sift” are always available.</td></tr>`;
+      : `<tr><td colspan="5" class="muted">No saved routes yet. Direct and “Through Sift” are always available.</td></tr>`;
     const ifaceOpts = `<option value="">Any (let Windows choose)</option>` +
       ifaces.map(i => `<option value="${esc(i.ip)}">${esc(i.name)} — ${esc(i.ip)}</option>`).join("");
     $("#modal").innerHTML = `<div class="overlay" data-backdrop><div class="modal wide">
@@ -245,7 +260,7 @@ const Sender = (() => {
         <p class="muted">A route decides how a request leaves this machine: straight out, back through
           Sift so your rules and breakpoints apply, or via an upstream proxy. Routes are saved in
           <span class="mono">%USERPROFILE%\\.sift\\sender.json</span>, never in the project.</p>
-        <table class="rules"><thead><tr><th>Name</th><th>Proxy</th><th>Send from</th><th></th></tr></thead>
+        <table class="rules"><thead><tr><th>Name</th><th>Proxy</th><th>Send from</th><th>TLS</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
         <h3>Add or edit a route</h3>
         <form id="rform">
@@ -275,7 +290,15 @@ const Sender = (() => {
             </select></label>
             <label>Timeout (s)<input name="timeout" class="mono" placeholder="30"></label>
           </div>
-          <label class="check"><input type="checkbox" name="follow" value="1"> Follow redirects</label>
+          <div class="row2">
+            <label>Default TLS fingerprint<select name="profile">${profileOptions(profiles)}</select></label>
+            <label>&nbsp;
+              <span class="inline">
+                <label class="check"><input type="checkbox" name="follow" value="1"> Follow redirects</label>
+                <label class="check"><input type="checkbox" name="http1" value="1"> Force HTTP/1.1</label>
+              </span>
+            </label>
+          </div>
           <p class="note bad" id="rerr" hidden></p>
           <div class="actions"><button type="button" class="btn" data-close>Close</button>
             <button class="btn primary">Save route</button></div>
@@ -308,6 +331,7 @@ const Sender = (() => {
         if (form.elements[k]) form.elements[k].value = v ?? "";
       }
       form.elements.follow.checked = !!r.follow;
+      form.elements.http1.checked = !!r.http1;
       form.elements.name.focus();
     } else if (del) {
       if (!confirm("Delete this route?")) return;
@@ -339,8 +363,11 @@ const Sender = (() => {
     el.target.addEventListener("input", save);
     el.route.addEventListener("change", () => {
       if (el.route.value === "__manage") { renderRoutes(); routesModal(); return; }
+      const p = routeProfile(el.route.value);
+      if (p) el.profile.value = p;
       save();
     });
+    el.profile.addEventListener("change", save);
     el.go.onclick = send;
     $("#send-routes").onclick = routesModal;
     $("#modal").addEventListener("click", routesClick);

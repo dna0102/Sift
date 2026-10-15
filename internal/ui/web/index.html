@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/app.css">
 <script src="/app.js" defer></script>
 <script src="/sender.js" defer></script>
+<script src="/jar.js" defer></script>
 <script src="/apps.js" defer></script>
 </head>
 <body>
@@ -15,6 +16,7 @@
   <div class="viewtabs">
     <button id="view-traffic" class="vt on" data-view="traffic">Traffic</button>
     <button id="view-sender" class="vt" data-view="sender" title="Edit and resend any request">Sender</button>
+    <button id="view-jar" class="vt" data-view="jar" title="Walk a page and inspect its cookies">Jar</button>
     <button id="view-apps" class="vt" data-view="apps" title="Analyse an APK or IPA">Apps</button>
   </div>
   <span class="sep"></span>
@@ -113,6 +115,7 @@
     <div class="sendbar">
       <label class="sb">Target<input id="send-target" class="mono" spellcheck="false" placeholder="https://example.com"></label>
       <label class="sb">Route<select id="send-route"></select></label>
+      <label class="sb">TLS<select id="send-profile" title="Impersonate this client's TLS and HTTP/2 fingerprint"></select></label>
       <button id="send-routes" class="tool icon" title="Add or edit routes">⚙</button>
       <label class="tool switch" title="Set Content-Length from the body you typed"><input type="checkbox" id="send-cl" checked><span>Update Content-Length</span></label>
       <span class="grow"></span>
@@ -140,6 +143,22 @@
       </div>
     </div>
     <div id="sendhist" class="sendhist"></div>
+  </section>
+
+  <section id="jarview" hidden>
+    <div class="sendbar">
+      <label class="sb grow">Page<input id="jar-url" class="mono" spellcheck="false" placeholder="https://example.com/login"></label>
+      <label class="sb">Route<select id="jar-route"></select></label>
+      <label class="sb">TLS<select id="jar-profile" title="Impersonate this client's TLS and HTTP/2 fingerprint"></select></label>
+      <label class="tool switch" title="Follow 3xx redirects, keeping cookies across hops"><input type="checkbox" id="jar-follow" checked><span>Follow redirects</span></label>
+      <button id="jar-go" class="btn primary" title="Ctrl+Enter">Analyse ▸</button>
+    </div>
+    <div class="sendbar">
+      <label class="sb grow">Find<input id="jar-pattern" class="mono" spellcheck="false" placeholder="cookie name, header name, or any value"></label>
+      <label class="tool switch" title="Treat the search as a regular expression"><input type="checkbox" id="jar-regex"><span>Regex</span></label>
+      <span id="jar-meta" class="muted sendmeta"></span>
+    </div>
+    <div id="jar-body" class="jarbody"><p class="placeholder">Give it a page and it will fetch it, keep every cookie it is handed, and show what went out and what came back.</p></div>
   </section>
 
   <section id="appview" hidden>

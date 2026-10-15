@@ -32,6 +32,15 @@ function toast(text) {
   $("#toasts").append(t);
   setTimeout(() => t.remove(), 3600);
 }
+function profileOptions(groups) {
+  let html = `<option value="none">Go default (no impersonation)</option>`;
+  for (const g of groups || []) {
+    html += `<optgroup label="${esc(g.label)}">` +
+      g.names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("") + `</optgroup>`;
+  }
+  return html;
+}
+
 function store(key, value) {
   try { return value === undefined ? localStorage.getItem(key) : localStorage.setItem(key, value); } catch { return null; }
 }
@@ -536,8 +545,10 @@ function switchView(view) {
   $("#side").hidden = view !== "traffic";
   document.querySelectorAll("main > .gutter.v")[0].hidden = view !== "traffic";
   $("#sendview").hidden = view !== "sender";
+  $("#jarview").hidden = view !== "jar";
   $("#appview").hidden = view !== "apps";
   if (view === "sender" && window.Sender) window.Sender.activate();
+  if (view === "jar" && window.Jar) window.Jar.activate();
   if (view === "apps" && window.Apps) window.Apps.activate();
 }
 document.querySelectorAll(".vt").forEach(b => b.onclick = () => switchView(b.dataset.view));

@@ -4,7 +4,7 @@ An HTTP/HTTPS proxy you run on your own machine. It decrypts TLS, shows every re
 the browser, lets you edit and resend any of them, and pulls APK/IPA files apart to show you the
 endpoints and secrets inside.
 
-One `sift.exe`, about 11 MB. No Java, no installer, no account.
+One `sift.exe`, about 18 MB. No Java, no installer, no account.
 
 ![dashboard](https://img.shields.io/badge/dashboard-127.0.0.1%3A9091-blue) ![go](https://img.shields.io/badge/go-1.26-00ADD8) ![licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -47,6 +47,18 @@ your own breakpoints and rewrite rules apply to the resend, or through an upstre
 SOCKS5 proxy with a username and password. Each saved route can also pin which network interface
 to leave from, so you can pick Wi-Fi over Ethernet over a VPN adapter. Tabs keep their own
 history and there's a diff against the previous send.
+
+Next to it is the TLS dropdown, which is the other half of the point. Pick Chrome, Firefox,
+Safari, OkHttp or any of 83 profiles and the request goes out with that client's real TLS and
+HTTP/2 fingerprint, via [tls-client](https://github.com/bogdanfinn/tls-client). Your headers
+also go out in the order you typed them — a Chrome JA3 with Go's alphabetical header order
+still reads as a bot, so both halves matter. It works through every route, proxies included.
+
+**Jar** takes a URL and shows you everything about its cookies. It walks the redirect chain
+keeping a jar like a browser would, and for each hop shows what cookies went out, what
+`Set-Cookie` came back with domain, path, expiry and flags, and the full request and response
+headers. The Find box searches all of that at once, as text or regex, and tells you where each
+hit came from. Same route and TLS choices as the Sender, and every hop lands in the Traffic tab.
 
 **Apps** takes an `.apk` or `.ipa` (drag it onto the page) and tells you what's inside: the
 endpoints it talks to, API keys and tokens left in the binary, where it does certificate
@@ -116,7 +128,7 @@ internal/ca/        certificate authority
 internal/sysproxy/  Windows proxy and platform bits
 internal/apk/       APK/IPA parsing and the scanner
 internal/emulator/  emulator control and Frida
-internal/sender/    the Sender
+internal/sender/    the Sender, TLS fingerprinting and the Jar
 internal/ui/        dashboard, templates, web assets
 ```
 

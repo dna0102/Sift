@@ -45,6 +45,7 @@ func NewUI(app *sift.App) *UI {
 	m.HandleFunc("GET /app.js", u.static("web/app.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /apps.js", u.static("web/apps.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /sender.js", u.static("web/sender.js", "text/javascript; charset=utf-8"))
+	m.HandleFunc("GET /jar.js", u.static("web/jar.js", "text/javascript; charset=utf-8"))
 	m.HandleFunc("GET /app.css", u.static("web/app.css", "text/css; charset=utf-8"))
 	m.HandleFunc("GET /favicon.svg", u.static("web/favicon.svg", "image/svg+xml"))
 

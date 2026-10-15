@@ -3,7 +3,7 @@
 Local HTTP/HTTPS traffic capture and inspection, like Proxyman. Sift sits between the apps on your
 PC and the internet, decrypts HTTPS, and shows every request live at **http://127.0.0.1:9091**.
 
-One Go program, one ~11 MB `sift.exe`, no runtime to install.
+One Go program, one ~18 MB `sift.exe`, no runtime to install.
 
 ## Start
 
@@ -133,6 +133,45 @@ Best AVD choice: a **non-Play-Store, rooted** image (e.g. a Frida AVD with frida
 - Captured traffic is kept in memory only (limits in Settings: requests, body size, total memory).
 - `SIFT_DEBUG=1` prints connection decisions to the console; `SIFT_PPROF=1` serves a CPU profile on 127.0.0.1:6060.
 
+## TLS fingerprints
+
+Every request the Sender and the Jar send can impersonate a real client's TLS and HTTP/2
+fingerprint, using [tls-client](https://github.com/bogdanfinn/tls-client). Pick one from the
+**TLS** dropdown: 83 profiles covering Chrome, Firefox, Safari (desktop and iOS), Edge, Opera,
+Brave, OkHttp and a few app-specific ones.
+
+This changes what the server sees:
+
+| | Go default | chrome_131 |
+|---|---|---|
+| JA3 | `d6627faa72aa91c9e2ae51d456173c69` | `a19ab9f02aacf42deddc1f2acb3d3f63` |
+| JA4 | `t13d2512h2_b78ed14e2fd0_ab7e3b40a677` | `t13d1516h2_8daaf6152771_02713d6af862` |
+
+Headers go out in the order you typed them, which matters as much as the TLS hello — a Chrome
+JA3 with Go's alphabetical header order still reads as a bot. The Sender preserves your order
+and passes it through as the HTTP/2 header order too.
+
+A route can carry a default fingerprint, and the dropdown overrides it per tab. "Go default"
+turns impersonation off and uses the standard library, which is faster and fine when nothing is
+checking. Routes can also force HTTP/1.1.
+
+Fingerprinting works through every route, including an upstream HTTP or SOCKS5 proxy and
+Sift's own proxy.
+
+## Jar
+
+The **Jar** tab fetches a page and shows you everything about the cookies it hands out.
+
+Give it a URL, pick a route and a fingerprint, and it walks the redirect chain (up to 12 hops)
+keeping a cookie jar as a browser would. For each hop you get the cookies that were sent, the
+`Set-Cookie` headers that came back with their domain, path, expiry and flags, and the full
+request and response headers. Every hop is also a normal row in the Traffic list, so *inspect*
+opens it in the usual inspector.
+
+The **Find** box searches the jar, the `Set-Cookie` headers and both sets of headers at once,
+as plain text or as a regular expression. Results say where each hit came from and on which
+hop. Searching re-runs in the browser as you type, so it is instant once the fetch is done.
+
 ## Code
 
 ```
@@ -159,8 +198,10 @@ internal/apk/           mobile.go       the APK/IPA analysis engine
 internal/emulator/      emulator.go     boot an AVD, route it through Sift, install and run
                         frida.go        pinning bypass: start frida-server, spawn under Frida
                         unpin.js        the injected unpinning script
-internal/sender/        raw-HTTP parsing, routes (direct / through Sift / HTTP / SOCKS5),
-                        interface binding, send history
+internal/sender/        sender.go       raw-HTTP parsing, tabs, routes, send history
+                        transport.go    the two transports: Go's net/http, and tls-client for
+                                        TLS/HTTP2 fingerprint impersonation
+                        jar.go          the Jar: redirect walking, cookie collection, search
 internal/ui/            web.go          dashboard server and API
                         web_sender.go   Sender API
                         web_mobile.go   Apps API
@@ -169,8 +210,8 @@ internal/ui/            web.go          dashboard server and API
                         har.go          HAR and Postman export and import
                         codegen.go      copy as cURL / PowerShell / Python / Go / fetch
                         highlight.go    source highlighter for the decompiled-code viewer
-                        web/            index.html, app.css, modals.html,
-                                        app.js (traffic), sender.js (Sender), apps.js (Apps)
+                        web/            index.html, app.css, modals.html, app.js (traffic),
+                                        sender.js (Sender), jar.js (Jar), apps.js (Apps)
 ```
 
 The source carries no comments. This file is the explanation.

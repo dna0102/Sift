@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -43,6 +42,8 @@ type Route struct {
 	Verify  string `json:"verify"`
 	Follow  bool   `json:"follow"`
 	Timeout int    `json:"timeout"`
+	Profile string `json:"profile"`
+	HTTP1   bool   `json:"http1"`
 }
 
 func builtinRoutes() []*Route {
@@ -53,25 +54,27 @@ func builtinRoutes() []*Route {
 }
 
 type Tab struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Raw    string `json:"raw"`
-	Target string `json:"target"`
-	Route  string `json:"route"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Raw     string `json:"raw"`
+	Target  string `json:"target"`
+	Route   string `json:"route"`
+	Profile string `json:"profile"`
 }
 
 type Entry struct {
-	N      int    `json:"n"`
-	At     int64  `json:"at"`
-	Status int    `json:"status"`
-	Reason string `json:"reason"`
-	Dur    int64  `json:"dur"`
-	Size   int64  `json:"size"`
-	Flow   int64  `json:"flow"`
-	Route  string `json:"route"`
-	Target string `json:"target"`
-	Err    string `json:"err,omitempty"`
-	Note   string `json:"note,omitempty"`
+	N       int    `json:"n"`
+	At      int64  `json:"at"`
+	Status  int    `json:"status"`
+	Reason  string `json:"reason"`
+	Dur     int64  `json:"dur"`
+	Size    int64  `json:"size"`
+	Flow    int64  `json:"flow"`
+	Route   string `json:"route"`
+	Target  string `json:"target"`
+	Err     string `json:"err,omitempty"`
+	Note    string `json:"note,omitempty"`
+	Profile string `json:"profile,omitempty"`
 
 	req []byte
 	res []byte
@@ -186,13 +189,13 @@ func (s *Sender) NewTab(from *core.Flow) *Tab {
 	return t
 }
 
-func (s *Sender) SaveTab(id, name, raw, target, route string) {
+func (s *Sender) SaveTab(id, name, raw, target, route, profile string) {
 	s.mu.Lock()
 	if t := s.tab(id); t != nil {
 		if name != "" {
 			t.Name = name
 		}
-		t.Raw, t.Target, t.Route = raw, target, route
+		t.Raw, t.Target, t.Route, t.Profile = raw, target, route, profile
 	}
 	s.mu.Unlock()
 	s.saveSoon()
@@ -312,6 +315,7 @@ func rawFromFlow(f *core.Flow) (raw, target, name string) {
 type parsedRaw struct {
 	Method, Path, Proto string
 	Header              http.Header
+	Order               []string
 	Body                []byte
 	Chunked             bool
 }
@@ -351,6 +355,7 @@ func parseRaw(raw string) (*parsedRaw, error) {
 			return nil, fmt.Errorf("header line %q needs a colon", line)
 		}
 		p.Header.Add(k, strings.TrimSpace(v))
+		p.Order = append(p.Order, k)
 	}
 	p.Body = []byte(body)
 	if strings.Contains(strings.ToLower(p.Header.Get("Transfer-Encoding")), "chunked") {
@@ -363,11 +368,17 @@ func rawRequestText(p *parsedRaw, host string, clen int64) []byte {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "%s %s %s\r\n", p.Method, p.Path, p.Proto)
 	fmt.Fprintf(&b, "Host: %s\r\n", host)
-	for _, row := range core.HeaderRows(p.Header) {
-		if strings.EqualFold(row[0], "Host") || strings.EqualFold(row[0], "Content-Length") {
+	used := map[string]int{}
+	for _, name := range p.Order {
+		if strings.EqualFold(name, "Host") || strings.EqualFold(name, "Content-Length") {
 			continue
 		}
-		fmt.Fprintf(&b, "%s: %s\r\n", row[0], row[1])
+		vals := p.Header.Values(name)
+		i := used[strings.ToLower(name)]
+		used[strings.ToLower(name)] = i + 1
+		if i < len(vals) {
+			fmt.Fprintf(&b, "%s: %s\r\n", name, vals[i])
+		}
 	}
 	if clen >= 0 && (len(p.Body) > 0 || proxy.MethodsWithBody[p.Method]) {
 		fmt.Fprintf(&b, "Content-Length: %d\r\n", clen)
@@ -382,6 +393,7 @@ type SendReq struct {
 	Raw      string
 	Target   string
 	Route    string
+	Profile  string
 	UpdateCL bool
 }
 
@@ -394,7 +406,7 @@ func (s *Sender) Send(ctx context.Context, in SendReq) (*Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	rt := s.route(in.Route)
+	rt := s.route(in.Route).withProfile(in.Profile)
 
 	clen := int64(len(p.Body))
 	note := ""
@@ -440,58 +452,40 @@ func (s *Sender) Send(ctx context.Context, in SendReq) (*Entry, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, proxy.NewTrace(f)), p.Method, target, bytes.NewReader(p.Body[:clen]))
-	if err != nil {
-		s.finish(in.Tab, e, f, "Couldn't build the request: "+err.Error())
-		return e, nil
-	}
-	req.Header = p.Header.Clone()
-	req.Header.Del("Host")
-	req.Header.Del("Content-Length")
-	req.Host = hostHeader
-	if p.Chunked {
-		req.Header.Del("Transfer-Encoding")
-		req.TransferEncoding = []string{"chunked"}
-		req.ContentLength = -1
-	} else {
-		req.ContentLength = clen
-		if clen == 0 && !proxy.MethodsWithBody[p.Method] {
-			req.Body = http.NoBody
-		}
-	}
-
-	client, err := s.client(rt)
-	if err != nil {
-		s.finish(in.Tab, e, f, err.Error())
-		return e, nil
-	}
+	call := &outgoing{route: rt, parsed: p, target: target, host: hostHeader, clen: clen, flow: f}
 	start := time.Now()
-	res, err := client.Do(req)
+	var res *rawResponse
+	if rt.Profile != "" {
+		res, err = s.doImpersonate(ctx, call)
+	} else {
+		res, err = s.doStdlib(ctx, call)
+	}
+	e.Dur = time.Since(start).Milliseconds()
 	if err != nil {
 		s.finish(in.Tab, e, f, s.explain(err, rt, host, port))
 		return e, nil
 	}
-	defer res.Body.Close()
 
-	body, readErr := io.ReadAll(io.LimitReader(res.Body, maxSenderBody))
-	e.Dur = time.Since(start).Milliseconds()
-	decoded := body
+	decoded := res.Body
 	if enc := res.Header.Get("Content-Encoding"); enc != "" {
-		if d, ok := core.DecodeBody(body, enc); ok {
+		if d, ok := core.DecodeBody(res.Body, enc); ok {
 			decoded = d
 		}
 	}
-	e.Status, e.Reason, e.Size = res.StatusCode, http.StatusText(res.StatusCode), int64(len(body))
+	e.Status, e.Reason, e.Size = res.Status, http.StatusText(res.Status), int64(len(res.Body))
 	e.res = rawResponseText(res, decoded)
-	if readErr != nil && !errors.Is(readErr, io.EOF) {
-		e.Err = "The response was cut short: " + readErr.Error()
+	if res.ReadErr != nil && !errors.Is(res.ReadErr, io.EOF) {
+		e.Err = "The response was cut short: " + res.ReadErr.Error()
+	}
+	if rt.Profile != "" {
+		e.Profile = rt.Profile
 	}
 
 	f.Lock()
-	f.Status, f.StatusText, f.ResProto = res.StatusCode, http.StatusText(res.StatusCode), res.Proto
+	f.Status, f.StatusText, f.ResProto = res.Status, http.StatusText(res.Status), res.Proto
 	f.ResHeader = res.Header.Clone()
 	f.ResBody = decoded[:min(len(decoded), f.MaxBody)]
-	f.ResSize, f.ResTrunc, f.Decoded = int64(len(body)), len(decoded) > f.MaxBody, true
+	f.ResSize, f.ResTrunc, f.Decoded = int64(len(res.Body)), len(decoded) > f.MaxBody, true
 	f.ResHeader.Del("Content-Encoding")
 	f.End, f.State = time.Now(), "done"
 	f.Unlock()
@@ -556,9 +550,9 @@ func (s *Sender) explain(err error, rt *Route, host string, port int) string {
 	return proxy.DescribeErr(err, host, port)
 }
 
-func rawResponseText(res *http.Response, body []byte) []byte {
+func rawResponseText(res *rawResponse, body []byte) []byte {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "%s %d %s\r\n", res.Proto, res.StatusCode, http.StatusText(res.StatusCode))
+	fmt.Fprintf(&b, "%s %d %s\r\n", res.Proto, res.Status, http.StatusText(res.Status))
 	for _, row := range core.HeaderRows(res.Header) {
 		fmt.Fprintf(&b, "%s: %s\r\n", row[0], row[1])
 	}
