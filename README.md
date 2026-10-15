@@ -80,13 +80,17 @@ variables to export. Windows' bundled `curl.exe` also needs `--ssl-no-revoke`.
 ### Sender
 A full request workbench, in the same window as your traffic:
 
-- Right-click any captured request → **Send to Sender**, or compose one from scratch.
-- Edit **everything** — method, URL, every header, the body — as a form or as raw HTTP text.
-- **Choose how it goes out**: your normal network, the system proxy, or any upstream
-  HTTP/HTTPS/SOCKS5 proxy, with authentication. Save those as named profiles and switch with
-  one click.
-- Tabs you can rename and keep, full send history per tab, instant diffing against the
-  previous response.
+- Right-click any captured request → **Send to Sender** (or press `S`), or start from scratch.
+- Edit **everything** as raw HTTP text — request line, every header, the body — and it goes out
+  exactly as typed, mismatched `Host` and all. **Target** is a separate box, so one request can
+  be pointed at staging, production or localhost without retyping it.
+- **Choose how it goes out**: straight out over your network, back through Sift's own proxy so
+  your rules and breakpoints apply to the resend, or via an upstream **HTTP/HTTPS or SOCKS5**
+  proxy with username and password. Each route can also pin **which local interface to send
+  from** — Wi-Fi vs Ethernet vs VPN — plus certificate verification, redirect following and a
+  timeout. Save them as named profiles and switch with one click.
+- Named tabs that survive restarts, a send history per tab, and a **Diff** view comparing a
+  response line-by-line with the previous send.
 - `Ctrl+Enter` sends. Every send also lands in the Traffic list, so all the normal inspection
   tools work on it.
 
@@ -140,6 +144,7 @@ work to run.
 | **UI** | your browser — zoom, multiple tabs, remote over the LAN | Java desktop window |
 | **Big captures** | virtualised list; 10,000 rows cost the same as 40. HAR export streams to disk | sluggish, and exports build in memory |
 | **Pinned apps that reject the CA** | auto-detected and passed through, so the app **keeps working** | connection just fails |
+| **Resending requests** | Sender: raw editing, per-request route (direct / through Sift / HTTP / SOCKS5), pick the outgoing interface, response diff | Repeater: raw editing, one global upstream proxy setting, no diff |
 | **Mobile app analysis** | built in — decompile, find endpoints/secrets/pinning, cross-linked to live traffic | not included |
 | **Emulator + Frida unpinning** | one click, from the APK report | manual setup, every time |
 | **Which app sent this?** | shown per request | not shown |
