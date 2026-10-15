@@ -10,26 +10,34 @@ Thumbs.db
 .vscode/
 .idea/
 
+# local Claude Code tool permissions
+.claude/settings.local.json
+
 # Sift runtime data lives in %USERPROFILE%\.sift, never in the project.
-# These patterns are belt-and-braces so captured traffic, keys and settings
-# can never be committed by accident.
-.sift/
-config.json
-sender.json
+# These patterns are a backstop so captured traffic, keys and settings can
+# never be committed by accident. They are deliberately anchored to the repo
+# root so they cannot silently swallow a real source file deeper in the tree.
+/.sift/
+/config.json
+/sender.json
+.env
+.env.*
+
+# keys and certificates, anywhere
 *.pem
 *.cer
 *.crt
 *.key
 *.p12
 *.pfx
+
+# captures and mobile apps, anywhere
 *.har
 *.apk
 *.ipa
 *.xapk
 *.aab
 *.postman_collection.json
-.env
-.env.*
 
-# local Claude Code tool permissions
-.claude/settings.local.json
+# but test fixtures are source and must always be committed
+!**/testdata/**
