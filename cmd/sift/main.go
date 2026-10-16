@@ -110,6 +110,11 @@ func main() {
 
 	sift.Proxy = proxy.NewProxy(cfg, sift.Store, ca, sift.Bps, sift.ProxyPort, sift.UIPort)
 	sift.Proxy.EmulatorApp = sift.Emulator.EmulatorApp
+	sift.Emulator.OnCertInstalled = func() {
+		sift.Proxy.Pins.Reset()
+		cfg.Update(func(s *core.Settings) { s.LearnedPins = nil })
+		sift.Store.Hub.StateChanged()
+	}
 	if err := sift.Proxy.Listen(listenHost, sift.ProxyPort); err != nil {
 		fatal("Couldn't start the proxy: " + err.Error())
 	}

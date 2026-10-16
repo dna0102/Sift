@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"slices"
 	"syscall"
 	"time"
 
@@ -53,11 +54,26 @@ func (c *clientInfo) App() string {
 	return c.app
 }
 
+func (c *clientInfo) trustKey() string {
+	app := c.App()
+	if strings.HasSuffix(app, "(emulator)") || app != "" && isEmulatorProcess(app) {
+		return "emulator"
+	}
+	if app != "" {
+		return app
+	}
+	if host, _, err := net.SplitHostPort(c.addr); err == nil {
+		return host
+	}
+	return c.addr
+}
+
 func isEmulatorProcess(name string) bool {
 	n := strings.ToLower(name)
 
 	return n == "" || strings.HasPrefix(n, "adb") || strings.Contains(n, "qemu") ||
-		strings.Contains(n, "emulator") || strings.Contains(n, "crosvm") || strings.Contains(n, "goldfish")
+		strings.Contains(n, "emulator") || strings.Contains(n, "crosvm") || strings.Contains(n, "goldfish") ||
+		strings.Contains(n, "netsim")
 }
 
 type connInfo struct {
@@ -395,6 +411,10 @@ func (p *Proxy) mitmTLS(conn net.Conn, ci *connInfo) {
 		p.handshakeFailed(ci, err)
 		tc.Close()
 		return
+	}
+	if p.Pins.Succeeded(ci.client.trustKey()) {
+		p.Pins.ClearUntrusted()
+		p.store.Hub.StateChanged()
 	}
 	ci.scheme = "https"
 	if proto := tc.ConnectionState().NegotiatedProtocol; proto == "h2" || proto == "http/1.1" {
@@ -1143,11 +1163,22 @@ func (p *Proxy) handshakeFailed(ci *connInfo, err error) {
 		return
 	}
 	name := ci.name()
+	key := ci.client.trustKey()
 	trusted := p.ca.Trusted() == 1
+	distrusts, unlearn := p.Pins.Rejected(key, name)
+	if len(unlearn) > 0 {
+		p.cfg.Update(func(s *core.Settings) {
+			s.LearnedPins = slices.DeleteFunc(s.LearnedPins, func(h string) bool { return slices.Contains(unlearn, h) })
+		})
+	}
+	if distrusts {
+		trusted = false
+	}
 	passed := s.AutoPassPinned && p.Pins.Failed(name, alert, trusted)
 	if passed {
 		if alert && trusted && !contains(s.LearnedPins, name) {
 			p.cfg.Update(func(s *core.Settings) { s.LearnedPins = append(s.LearnedPins, name) })
+			p.Pins.Learned(key, name)
 		}
 		p.store.Hub.StateChanged()
 	}
@@ -1160,6 +1191,10 @@ func (p *Proxy) handshakeFailed(ci *connInfo, err error) {
 	p.tlsFails.Store(name, time.Now())
 	text := "The app rejected Sift's certificate."
 	switch {
+	case distrusts && key == "emulator":
+		text = "The emulator doesn't trust Sift's certificate: it rejects every host, so this isn't pinning. Launch the app from Sift's Apps tab with the Sift device so the certificate is installed as a system CA."
+	case distrusts:
+		text = "This client doesn't trust Sift's certificate: it rejects every host, so this isn't pinning. Install Sift's certificate as a trusted CA on that device or app."
 	case !trusted:
 		text = "The app rejected Sift's certificate because it isn't trusted yet. Install it from the Certificate dialog."
 	case alert:

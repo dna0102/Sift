@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/md5"
 	"encoding/asn1"
 	"fmt"
 	"os"
@@ -43,6 +43,8 @@ type Emulator struct {
 	cancel  context.CancelFunc
 	proc    *exec.Cmd
 	exited  chan struct{}
+
+	OnCertInstalled func()
 
 	unpin       bool
 	fridaCmd    *exec.Cmd
@@ -577,6 +579,9 @@ func (e *Emulator) installCert(ctx context.Context, serial string) string {
 
 	e.adbCmd(serial, 20*time.Second, "push", tmp, "/data/local/tmp/"+certFile)
 	if e.certBindMount(serial, certFile) {
+		if e.OnCertInstalled != nil {
+			e.OnCertInstalled()
+		}
 		return sysOK
 	}
 
@@ -848,7 +853,7 @@ func androidCertHash(der []byte) (string, error) {
 		return "", err
 	}
 	subject := cert.TBSCertificate.Subject.FullBytes
-	sum := sha1.Sum(subject)
+	sum := md5.Sum(subject)
 
 	h := uint32(sum[0]) | uint32(sum[1])<<8 | uint32(sum[2])<<16 | uint32(sum[3])<<24
 	return fmt.Sprintf("%08x", h), nil

@@ -1,11 +1,36 @@
 package emulator
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestAndroidCertHashMatchesSubjectHashOld(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "Sift CA", Organization: []string{"Sift"}, OrganizationalUnit: []string{"Sift Local Debugging Proxy"}},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := androidCertHash(der)
+	if err != nil || got != "fb1e5c1b" {
+		t.Errorf("androidCertHash = %q, %v; want fb1e5c1b (openssl x509 -subject_hash_old)", got, err)
+	}
+}
 
 func TestParseRAMMB(t *testing.T) {
 	for in, want := range map[string]int{"2G": 2048, "2048": 2048, "1536M": 1536, "4GB": 4096, "": 0} {
