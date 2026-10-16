@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func highlightSource(path string, data []byte) string {
+func highlightSource(path string, data []byte, firstLine int) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	text := string(data)
 	var body string
@@ -27,10 +27,11 @@ func highlightSource(path string, data []byte) string {
 	b.Grow(len(body) + len(lines)*40)
 	b.WriteString(`<table class="src">`)
 	for i, ln := range lines {
+		n := strconv.Itoa(i + firstLine)
 		b.WriteString(`<tr id="L`)
-		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(n)
 		b.WriteString(`"><td class="ln">`)
-		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(n)
 		b.WriteString(`</td><td class="lc">`)
 		if ln == "" {
 			b.WriteString(" ")

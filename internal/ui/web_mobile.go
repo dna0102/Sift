@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,35 +87,82 @@ func (u *UI) appFile(w http.ResponseWriter, r *http.Request) {
 	if rep == nil {
 		return
 	}
-	m := rep.Lock()
-	m.Lock()
-	src := rep.SrcDir
-	m.Unlock()
-	if src == "" {
-		http.Error(w, "nothing decompiled", http.StatusNotFound)
+	roots := rep.SourceRoots()
+	if len(roots) == 0 {
+		http.Error(w, "This app's extracted files aren't available any more. Re-open the app.", http.StatusNotFound)
 		return
 	}
 	rel := r.URL.Query().Get("path")
-	clean := filepath.Clean(filepath.Join(src, filepath.FromSlash(rel)))
-	srcAbs, _ := filepath.Abs(src)
-	absClean, _ := filepath.Abs(clean)
-	if !strings.HasPrefix(absClean, srcAbs+string(os.PathSeparator)) {
-		http.Error(w, "bad path", http.StatusForbidden)
-		return
+	path := ""
+	for _, root := range roots {
+		if p := resolveUnder(root, rel); p != "" {
+			path = p
+			break
+		}
 	}
-	data, err := os.ReadFile(clean)
-	if err != nil {
-		http.Error(w, "file not found", http.StatusNotFound)
+	if path == "" {
+		http.Error(w, rel+" isn't in this app's extracted files. Re-open the app if Sift was restarted.", http.StatusNotFound)
 		return
-	}
-	if len(data) > 2<<20 {
-		data = data[:2<<20]
 	}
 	line, _ := strconv.Atoi(r.URL.Query().Get("line"))
+	data, first, err := readWindow(path, line, 600)
+	if err != nil {
+		http.Error(w, "couldn't read "+rel+": "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"path": rel, "line": line, "html": highlightSource(rel, data),
+		"path": rel, "line": line, "first": first, "html": highlightSource(rel, data, first),
 	})
+}
+
+func resolveUnder(root, rel string) string {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	p, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(rel)))
+	if err != nil || !strings.HasPrefix(p, rootAbs+string(os.PathSeparator)) {
+		return ""
+	}
+	if st, err := os.Stat(p); err != nil || st.IsDir() {
+		return ""
+	}
+	return p
+}
+
+func readWindow(path string, line, span int) ([]byte, int, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if st.Size() <= 1<<20 {
+		data, err := os.ReadFile(path)
+		return data, 1, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	first := max(1, line-span/2)
+	last := first + span
+	var out bytes.Buffer
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	for n := 1; sc.Scan(); n++ {
+		if n < first {
+			continue
+		}
+		if n > last {
+			break
+		}
+		if n > first {
+			out.WriteByte('\n')
+		}
+		out.Write(sc.Bytes())
+	}
+	return out.Bytes(), first, sc.Err()
 }
 
 func (u *UI) appEvents(w http.ResponseWriter, r *http.Request) {

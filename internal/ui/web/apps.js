@@ -262,12 +262,17 @@ const Apps = (() => {
     }
     const avds = emuDevices.avds || [];
     const running = emuDevices.running || [];
-    if (!avds.length && !running.length) {
-      panel.innerHTML = `<div class="emu-box warn">No virtual devices found. Create one in Android Studio (Device Manager), then reopen.</div>`;
+    const siftOk = emuDevices.siftUsable;
+    const siftOpt = siftOk ? `<option value="${esc(emuDevices.sift)}">Sift device: fast, rooted (recommended)</option>` : "";
+    if (!siftOpt && !avds.length && !running.length) {
+      panel.innerHTML = `<div class="emu-box warn">${esc(emuDevices.siftNote || "No virtual devices found. Create one in Android Studio (Device Manager), then reopen.")}</div>`;
       return;
     }
-    const opts = [...running.map(s => `<option value="${esc(s)}">${esc(s)} (running)</option>`),
+    const opts = [siftOpt,
+                  ...running.map(s => `<option value="${esc(s)}">${esc(s)} (already running${s.startsWith("emulator-") ? "" : ", USB device"})</option>`),
                   ...avds.map(a => `<option value="${esc(a)}">${esc(a)}</option>`)].join("");
+    const siftHint = !siftOk ? `<div class="muted small">Sift device unavailable: ${esc(emuDevices.siftNote)}</div>`
+      : !emuDevices.siftReady ? `<div class="muted small">The Sift device is created on first launch. ${esc(emuDevices.siftNote)}. The first boot takes about a minute; after that it resumes from a snapshot in seconds.</div>` : "";
     const fridaOk = emuDevices.fridaPython;
     const unpinRow = `<label class="emu-check ${fridaOk ? "" : "off"}" ${fridaOk ? "" : `title="${esc(emuDevices.fridaReason || "")}"`}>
         <input type="checkbox" id="emu-unpin" ${fridaOk ? "" : "disabled"}>
@@ -281,6 +286,7 @@ const Apps = (() => {
         <button id="emu-cancel" class="link">Cancel</button>
       </div>
       ${unpinRow}
+      ${siftHint}
       <div class="muted small">Sift boots the device, routes its traffic through the proxy, trusts its certificate, installs this app and opens it. Traffic appears in the Traffic tab, tagged with the app.</div>
     </div>`;
     panel.querySelector("#emu-cancel").onclick = () => { panel.innerHTML = ""; };
@@ -338,13 +344,16 @@ const Apps = (() => {
     view.hidden = false;
     view.innerHTML = `<div class="cv-head"><span class="mono">${esc(file)}</span><span class="grow"></span><button class="cv-x">✕</button></div><div class="cv-body"><p class="muted pad">Loading…</p></div>`;
     view.querySelector(".cv-x").onclick = () => { view.hidden = true; };
+    const body = view.querySelector(".cv-body");
     try {
-      const data = await (await fetch(`/api/apps/reports/${id}/file?path=${encodeURIComponent(file)}&line=${line}`)).json();
-      view.querySelector(".cv-body").innerHTML = data.html;
+      const res = await fetch(`/api/apps/reports/${id}/file?path=${encodeURIComponent(file)}&line=${line}`);
+      if (!res.ok) { body.innerHTML = `<p class="bad pad">${esc(await res.text())}</p>`; return; }
+      const data = await res.json();
+      body.innerHTML = (data.first > 1 ? `<p class="muted pad small">Large file — showing the lines around line ${line}.</p>` : "") + data.html;
       const target = view.querySelector("#L" + line);
       if (target) { target.classList.add("hl"); target.scrollIntoView({ block: "center" }); }
-    } catch {
-      view.querySelector(".cv-body").innerHTML = `<p class="bad pad">Couldn't open this file.</p>`;
+    } catch (err) {
+      body.innerHTML = `<p class="bad pad">Couldn't open this file: ${esc(String(err.message || err))}</p>`;
     }
   }
 

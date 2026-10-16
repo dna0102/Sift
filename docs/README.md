@@ -117,7 +117,9 @@ Static analysis is read-only: Sift reads the app, it never logs in, submits form
 
 On an APK report, **▶ Open in emulator** boots an Android emulator, routes its traffic through Sift, installs the app and opens it — so you can drive the app by hand while all its traffic flows into the **Traffic** tab, tagged with the app name. It needs the Android SDK (Android Studio: an AVD plus platform-tools); Sift finds it via `ANDROID_HOME`/`ANDROID_SDK_ROOT` or the default install path.
 
-How it works: `adb reverse` tunnels the emulator's loopback to Sift's port, Android's global proxy is pointed at it, and Sift's certificate is installed as a **system** CA (on a writable-system or rooted AVD) so apps trust it.
+The default choice is the **Sift device**, an AVD Sift creates for itself on first use. It is built from an installed Google APIs system image (Android 14 preferred), because those can be rooted and Play Store images can't. It gets 4 GB of RAM, four cores and the host GPU. The first launch does a full boot, which takes about a minute. Stopping it from Sift saves a quickboot snapshot, and later launches resume in well under half a minute with the certificate still trusted. Other AVDs, and devices that are already running (including phones on USB), are listed below it. Other AVDs also boot with the GPU on and at least 3 GB of RAM. Without those, Android draws on the CPU, which is what makes System UI stop responding.
+
+How it works: Android's global proxy is pointed at Sift on `10.0.2.2`, and Sift's certificate is trusted as a **system** CA. With `adb root`, Sift copies the system store into a tmpfs over `/system/etc/security/cacerts` and adds its own certificate. On Android 14 and later it also bind-mounts that store over the Conscrypt APEX inside zygote's mount namespace and each running app's, so every app sees it. Animations, package verification and ANR dialogs are switched off so installs and launches don't stall.
 
 **Bypass SSL pinning (Frida).** Tick this in the launch dialog to decrypt apps that pin their certificate. Sift starts `frida-server` on the device and injects a universal unpinning script, so the app's HTTPS becomes readable in the Traffic tab instead of showing as encrypted tunnels. It needs the `frida` Python module on this PC (`pip install frida-tools`) and a rooted AVD with `/data/local/tmp/frida-server` (the version must match your host's `frida`). Without it, pinned apps still run and are captured, just as tunnels.
 
@@ -125,7 +127,9 @@ What it covers: the script hooks the common **Java-layer** pinning — OkHttp `C
 
 What it does **not** reliably do: apps with heavy anti-instrumentation (notably **TikTok / ByteDance**) detect Frida through native code and kill themselves regardless — there is no dependable one-click bypass for these, and defeating them is an app-specific, constantly-changing effort outside Sift's scope. Pinning done purely in native BoringSSL is also not bypassed by default, because the native hooks that would do it destabilise some apps. When unpinning can't take hold, the app still runs and all its non-pinned traffic is captured.
 
-Best AVD choice: a **non-Play-Store, rooted** image (e.g. a Frida AVD with frida-server). Play Store images have a locked system partition, so only browser HTTPS decrypts there. **Stop** shuts the emulator down and restores its settings.
+Play Store images can't be rooted, so on them only browser HTTPS decrypts. **Stop** clears the proxy and shuts down an emulator Sift started. It leaves alone a device that was already running.
+
+The code viewer opens the file a finding came from. Large APKs are scanned from the strings in their dex files. Those dumps stay viewable after jadx finishes decompiling in the background, and for big dumps the viewer shows only the lines around the finding.
 
 ## Notes
 
@@ -261,6 +265,7 @@ internal/apk/           mobile.go       the APK/IPA analysis engine
                         bundle.go       split-APK bundles
                         tools.go        downloads and caches jadx on first use
 internal/emulator/      emulator.go     boot an AVD, route it through Sift, install and run
+                        avd.go          the Sift device: picks a rootable image, writes the AVD, boot flags
                         frida.go        pinning bypass: start frida-server, spawn under Frida
                         unpin.js        the injected unpinning script
 internal/sender/        sender.go       raw-HTTP parsing, tabs, routes, send history

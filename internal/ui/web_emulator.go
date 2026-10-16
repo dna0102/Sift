@@ -3,6 +3,8 @@ package ui
 import (
 	"net/http"
 	"strconv"
+
+	"sift/internal/emulator"
 )
 
 func (u *UI) emuStatus(w http.ResponseWriter, r *http.Request) {
@@ -13,7 +15,15 @@ func (u *UI) emuDevices(w http.ResponseWriter, r *http.Request) {
 	avds, running := u.app.Emulator.ListDevices()
 
 	frida := u.app.Emulator.FridaProbe("")
-	writeJSON(w, map[string]any{"avds": avds, "running": running, "available": u.app.Emulator.Available(),
+	others := make([]string, 0, len(avds))
+	for _, a := range avds {
+		if a != emulator.SiftAVD {
+			others = append(others, a)
+		}
+	}
+	siftUsable, siftReady, siftNote := u.app.Emulator.SiftDeviceStatus()
+	writeJSON(w, map[string]any{"avds": others, "running": running, "available": u.app.Emulator.Available(),
+		"sift": emulator.SiftAVD, "siftUsable": siftUsable, "siftReady": siftReady, "siftNote": siftNote,
 		"fridaPython": frida.Python, "fridaReason": frida.Reason})
 }
 

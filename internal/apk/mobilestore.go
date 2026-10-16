@@ -38,6 +38,7 @@ type Report struct {
 	Hosts    []string  `json:"hosts,omitempty"`
 
 	SrcDir    string         `json:"-"`
+	ScanDir   string         `json:"-"`
 	InPath    string         `json:"-"`
 	Counts    map[string]int `json:"counts"`
 	QuickScan bool           `json:"quickScan"`
@@ -56,6 +57,18 @@ type Component struct {
 	Type     string `json:"type"`
 	Name     string `json:"name"`
 	Exported bool   `json:"exported"`
+}
+
+func (r *Report) SourceRoots() []string {
+	r.Lock().Lock()
+	defer r.Lock().Unlock()
+	var roots []string
+	for _, d := range []string{r.ScanDir, r.SrcDir} {
+		if d != "" && (len(roots) == 0 || roots[0] != d) {
+			roots = append(roots, d)
+		}
+	}
+	return roots
 }
 
 func (r *Report) Lock() *sync.Mutex {

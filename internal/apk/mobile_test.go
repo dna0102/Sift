@@ -48,6 +48,32 @@ public class Api {
 	}
 }
 
+func TestFindingFilesStayReachableAfterDecompile(t *testing.T) {
+	dir := t.TempDir()
+	quick := filepath.Join(dir, "src")
+	os.MkdirAll(filepath.Join(quick, "strings"), 0o755)
+	os.WriteFile(filepath.Join(quick, "strings", "classes.dex.txt"), []byte("https://api.example.com/v1/x\n"), 0o644)
+
+	r := &Report{}
+	a := &Analyser{store: NewMobileStore()}
+	a.scan(r, quick)
+	if len(r.Findings) == 0 {
+		t.Fatal("no findings from the strings dump")
+	}
+	r.set(func() { r.SrcDir = filepath.Join(dir, "decompiled") })
+
+	file := r.Findings[0].File
+	found := false
+	for _, root := range r.SourceRoots() {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(file))); err == nil {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("%s not reachable from roots %v", file, r.SourceRoots())
+	}
+}
+
 func TestSplitConcatURLs(t *testing.T) {
 	got := splitConcatURLs("https://a.com/xhttps://b.com/y")
 	if len(got) != 2 || got[0] != "https://a.com/x" || got[1] != "https://b.com/y" {

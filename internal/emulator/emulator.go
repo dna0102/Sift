@@ -2,7 +2,7 @@ package emulator
 
 import (
 	"archive/zip"
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/asn1"
@@ -42,6 +42,7 @@ type Emulator struct {
 	logLine string
 	cancel  context.CancelFunc
 	proc    *exec.Cmd
+	exited  chan struct{}
 
 	unpin       bool
 	fridaCmd    *exec.Cmd
@@ -166,7 +167,6 @@ func (e *Emulator) log(line string) {
 	e.logLine = line
 	e.mu.Unlock()
 	proxy.Debugf("emulator: %s", line)
-	e.mobile.Changed(0)
 }
 
 func (e *Emulator) run(timeout time.Duration, name string, args ...string) (string, error) {
@@ -217,11 +217,27 @@ func (e *Emulator) launchFlow(ctx context.Context, avd, apkPath, pkg string) {
 		}
 	}()
 
-	serial := ""
-	if strings.HasPrefix(avd, "emulator-") || strings.Contains(avd, ":") {
+	serial, fresh := "", false
+	if e.isSerial(avd) {
 		serial = avd
+	} else if s := e.runningSerialFor(avd); s != "" {
+		serial = s
 	} else {
-		e.setState("booting", "Starting the emulator…")
+		if avd == SiftAVD {
+			if avdDir(SiftAVD) == "" {
+				e.setState("booting", "Creating the Sift device…")
+			}
+			if err := e.ensureSiftAVD(); err != nil {
+				e.setState("error", "Couldn't create the Sift device: "+err.Error())
+				return
+			}
+		}
+		fresh = !hasQuickboot(avd)
+		if fresh {
+			e.setState("booting", "First start of this device, so it does a full boot (about a minute). Stopping it from Sift saves a snapshot, and later launches resume in seconds.")
+		} else {
+			e.setState("booting", "Resuming the emulator from its snapshot…")
+		}
 		s, err := e.boot(ctx, avd)
 		if err != nil {
 			e.setState("error", "Couldn't start the emulator: "+err.Error())
@@ -233,18 +249,25 @@ func (e *Emulator) launchFlow(ctx context.Context, avd, apkPath, pkg string) {
 	e.serial = serial
 	e.mu.Unlock()
 
-	e.setState("booting", "Waiting for Android to finish starting…")
+	if fresh {
+		e.setState("booting", "Waiting for Android to finish its first boot…")
+	} else {
+		e.setState("booting", "Waiting for Android…")
+	}
 	if err := e.waitBoot(ctx, serial); err != nil {
 		e.setState("error", "The emulator didn't finish booting: "+err.Error())
 		return
 	}
+	e.tune(serial)
 
-	e.setState("installing", "Configuring the proxy and certificate…")
+	e.setState("installing", "Trusting Sift's certificate…")
+	certMsg := e.installCert(ctx, serial)
+
+	e.setState("installing", "Routing the device through Sift…")
 	if err := e.configureProxy(serial); err != nil {
 		e.setState("error", "Couldn't route the emulator through Sift: "+err.Error())
 		return
 	}
-	certMsg := e.installCert(ctx, serial)
 
 	e.setState("installing", "Installing the app…")
 	if out, err := e.installApp(serial, apkPath); err != nil {
@@ -312,51 +335,112 @@ func (e *Emulator) launchFlow(ctx context.Context, avd, apkPath, pkg string) {
 	go e.trackForeground(ctx, serial)
 }
 
+func (e *Emulator) isSerial(name string) bool {
+	_, ok := e.deviceStates()[name]
+	return ok
+}
+
+func (e *Emulator) runningSerialFor(avd string) string {
+	for serial, online := range e.deviceStates() {
+		if !online || !strings.HasPrefix(serial, "emulator-") {
+			continue
+		}
+		out, _ := e.adbCmd(serial, 5*time.Second, "emu", "avd", "name")
+		if first, _, _ := strings.Cut(strings.TrimSpace(out), "\n"); strings.TrimSpace(first) == avd {
+			return serial
+		}
+	}
+	return ""
+}
+
+func (e *Emulator) tune(serial string) {
+	script := strings.Join([]string{
+		"settings put global window_animation_scale 0",
+		"settings put global transition_animation_scale 0",
+		"settings put global animator_duration_scale 0",
+		"settings put global package_verifier_enable 0",
+		"settings put global verifier_verify_adb_installs 0",
+		"settings put global hide_error_dialogs 1",
+		"settings put secure anr_show_background 0",
+		"am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS",
+	}, "; ")
+	e.adbCmd(serial, 20*time.Second, "shell", script)
+}
+
 func (e *Emulator) boot(ctx context.Context, avd string) (string, error) {
 	e.run(5*time.Second, e.adb, "reconnect", "offline")
 	before := e.deviceSet()
-	args := []string{
-		"-avd", avd,
-		"-writable-system",
-		"-no-snapshot-load",
-		"-no-boot-anim",
-	}
-	cmd := exec.CommandContext(ctx, e.emu, args...)
+	cmd := exec.CommandContext(ctx, e.emu, bootArgs(avd)...)
 	sysproxy.HideWindow(cmd)
 
-	stderr, _ := cmd.StderrPipe()
+	logs := &lineLogger{emu: e}
+	cmd.Stdout, cmd.Stderr = logs, logs
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
+	exited := make(chan struct{})
+	go func() { cmd.Wait(); close(exited) }()
 	e.mu.Lock()
-	e.proc = cmd
+	e.proc, e.exited = cmd, exited
 	e.mu.Unlock()
-	if stderr != nil {
-		go func() {
-			sc := bufio.NewScanner(stderr)
-			for sc.Scan() {
-				e.log(sc.Text())
-			}
-		}()
-	}
 
-	deadline := time.Now().Add(120 * time.Second)
+	deadline := time.Now().Add(240 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-exited:
+			e.mu.Lock()
+			last := e.logLine
+			e.mu.Unlock()
+			return "", fmt.Errorf("the emulator process exited: %s", apk.Clip(last, 200))
+		case <-time.After(time.Second):
 		}
 		for serial, online := range e.deviceStates() {
 			if online && !before[serial] {
 				return serial, nil
 			}
 		}
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-			return "", fmt.Errorf("the emulator process exited (check the AVD in Android Studio)")
-		}
 	}
 	return "", fmt.Errorf("timed out waiting for the emulator to come online")
+}
+
+type lineLogger struct {
+	emu *Emulator
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (l *lineLogger) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buf = append(l.buf, p...)
+	for {
+		i := bytes.IndexByte(l.buf, '\n')
+		if i < 0 {
+			break
+		}
+		if line := strings.TrimSpace(string(l.buf[:i])); line != "" {
+			l.emu.log(line)
+		}
+		l.buf = l.buf[i+1:]
+	}
+	return len(p), nil
+}
+
+func (e *Emulator) procExited() bool {
+	e.mu.Lock()
+	ch := e.exited
+	e.mu.Unlock()
+	if ch == nil {
+		return false
+	}
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Emulator) deviceStates() map[string]bool {
@@ -382,20 +466,17 @@ func (e *Emulator) deviceSet() map[string]bool {
 }
 
 func (e *Emulator) waitBoot(ctx context.Context, serial string) error {
-	e.adbCmd(serial, 120*time.Second, "wait-for-device")
-	deadline := time.Now().Add(120 * time.Second)
+	e.adbCmd(serial, 240*time.Second, "wait-for-device")
+	deadline := time.Now().Add(300 * time.Second)
 	missing := 0
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(time.Second):
 		}
 
-		e.mu.Lock()
-		proc := e.proc
-		e.mu.Unlock()
-		if proc != nil && proc.ProcessState != nil && proc.ProcessState.Exited() {
+		if e.procExited() {
 			return fmt.Errorf("the emulator shut down before finishing boot")
 		}
 
@@ -407,9 +488,8 @@ func (e *Emulator) waitBoot(ctx context.Context, serial string) error {
 			continue
 		}
 		missing = 0
-		out, _ := e.adbCmd(serial, 8*time.Second, "shell", "getprop", "sys.boot_completed")
-		if strings.TrimSpace(out) == "1" {
-			time.Sleep(2 * time.Second)
+		out, _ := e.adbCmd(serial, 8*time.Second, "shell", "getprop sys.boot_completed; pm path android")
+		if strings.HasPrefix(strings.TrimSpace(out), "1") && strings.Contains(out, "package:") {
 			return nil
 		}
 	}
@@ -481,50 +561,63 @@ func (e *Emulator) installCert(ctx context.Context, serial string) string {
 
 	const sysOK = "Sift's certificate is trusted system-wide, so most apps' HTTPS is decrypted. Apps that pin their certificate still show as encrypted tunnels."
 
+	installed := "[ -f /apex/com.android.conscrypt/cacerts/" + certFile + " ] || [ -f /system/etc/security/cacerts/" + certFile + " ] && echo SIFT_CERT_PRESENT"
+	if out, _ := e.adbCmd(serial, 8*time.Second, "shell", installed); strings.Contains(out, "SIFT_CERT_PRESENT") {
+		return sysOK
+	}
+
 	e.adbCmd(serial, 15*time.Second, "root")
-	time.Sleep(1500 * time.Millisecond)
-	e.adbCmd(serial, 10*time.Second, "wait-for-device")
-
-	e.adbCmd(serial, 20*time.Second, "push", tmp, "/data/local/tmp/"+certFile)
-
-	if out, _ := e.adbCmd(serial, 20*time.Second, "remount"); !strings.Contains(strings.ToLower(out), "must be bootloader") {
-		if o, err := e.adbCmd(serial, 15*time.Second, "shell", "cp", "/data/local/tmp/"+certFile, "/system/etc/security/cacerts/"+certFile); err == nil && o == "" {
-			e.adbCmd(serial, 10*time.Second, "shell", "chmod", "644", "/system/etc/security/cacerts/"+certFile)
-			return sysOK
+	for i := 0; i < 10; i++ {
+		time.Sleep(time.Second)
+		e.adbCmd(serial, 10*time.Second, "wait-for-device")
+		if out, _ := e.adbCmd(serial, 5*time.Second, "shell", "id"); strings.Contains(out, "uid=0") || (i >= 3 && strings.Contains(out, "uid=")) {
+			break
 		}
 	}
 
+	e.adbCmd(serial, 20*time.Second, "push", tmp, "/data/local/tmp/"+certFile)
 	if e.certBindMount(serial, certFile) {
 		return sysOK
 	}
 
 	e.adbCmd(serial, 15*time.Second, "push", tmp, "/sdcard/Download/sift-ca.pem")
-	return "Couldn't install the certificate as a system CA (this device's /system is read-only). Browser HTTPS is decrypted; for other apps, use a rooted/Frida AVD, or import /sdcard/Download/sift-ca.pem via core.Settings → Security → Install a certificate."
+	return "Couldn't trust Sift's certificate system-wide because this device can't be rooted (Play Store images can't). Pick the \"Sift device\" instead, or import /sdcard/Download/sift-ca.pem via Settings → Security → Install a certificate (browsers only)."
 }
 
 func (e *Emulator) certBindMount(serial, certFile string) bool {
-
-	if out, _ := e.adbCmd(serial, 8*time.Second, "shell", "su", "0", "id"); !strings.Contains(out, "uid=0") {
-		if out2, _ := e.adbCmd(serial, 8*time.Second, "shell", "id"); !strings.Contains(out2, "uid=0") {
+	su := []string{"shell"}
+	if out, _ := e.adbCmd(serial, 8*time.Second, "shell", "id"); !strings.Contains(out, "uid=0") {
+		if out2, _ := e.adbCmd(serial, 8*time.Second, "shell", "su", "0", "id"); !strings.Contains(out2, "uid=0") {
 			return false
 		}
+		su = []string{"shell", "su", "0"}
 	}
 	script := strings.Join([]string{
-		"set -e",
-		"D=/system/etc/security/cacerts",
-		"mount -t tmpfs tmpfs $D",
-
-		"cp /apex/com.android.conscrypt/cacerts/* $D/ 2>/dev/null || true",
-		"cp /system/etc/security/cacerts.bak/* $D/ 2>/dev/null || true",
-		"cp /data/local/tmp/" + certFile + " $D/" + certFile,
-		"chown root:root $D/* 2>/dev/null || true",
-		"chmod 644 $D/* 2>/dev/null || true",
-		"chcon u:object_r:system_security_cacerts_file:s0 $D/* 2>/dev/null || true",
-
-		"if [ -d /apex/com.android.conscrypt/cacerts ]; then mount -t tmpfs tmpfs /apex/com.android.conscrypt/cacerts 2>/dev/null && cp $D/* /apex/com.android.conscrypt/cacerts/ 2>/dev/null && chcon u:object_r:system_security_cacerts_file:s0 /apex/com.android.conscrypt/cacerts/* 2>/dev/null; fi || true",
-		"echo SIFT_CERT_OK",
+		"S=/system/etc/security/cacerts",
+		"A=/apex/com.android.conscrypt/cacerts",
+		"T=/data/local/tmp/sift-cacerts",
+		"rm -rf $T; mkdir -p -m 700 $T",
+		"cp $S/* $T/ 2>/dev/null",
+		"[ -d $A ] && cp $A/* $T/ 2>/dev/null",
+		"cp /data/local/tmp/" + certFile + " $T/",
+		"mount -t tmpfs tmpfs $S",
+		"cp $T/* $S/",
+		"chown root:root $S/*",
+		"chmod 644 $S/*",
+		"chcon u:object_r:system_file:s0 $S/*",
+		"rm -rf $T",
+		"if [ -d $A ]; then",
+		"  mount --bind $S $A",
+		"  for Z in $(pidof zygote) $(pidof zygote64); do",
+		"    nsenter --mount=/proc/$Z/ns/mnt -- /bin/mount --bind $S $A",
+		"    for P in $(ps -o PID -P $Z | grep -v PID); do nsenter --mount=/proc/$P/ns/mnt -- /bin/mount --bind $S $A 2>/dev/null & done",
+		"  done",
+		"  wait",
+		"fi",
+		"[ -f $S/" + certFile + " ] && echo SIFT_CERT_OK",
 	}, "\n")
-	out, _ := e.adbCmd(serial, 30*time.Second, "shell", "su", "0", "sh", "-c", shellQuote(script))
+	args := append(su, "sh", "-c", shellQuote(script))
+	out, _ := e.adbCmd(serial, 60*time.Second, args...)
 	return strings.Contains(out, "SIFT_CERT_OK")
 }
 
@@ -681,33 +774,44 @@ func (e *Emulator) trackForeground(ctx context.Context, serial string) {
 		if !running {
 			return
 		}
+		if e.procExited() {
+			e.stopFrida()
+			e.mu.Lock()
+			e.state, e.serial, e.pkg, e.appName, e.proc, e.cancel, e.exited = "idle", "", "", "", nil, nil, nil
+			e.message = "The emulator was closed."
+			e.mu.Unlock()
+			e.mobile.Changed(0)
+			e.store.Hub.StateChanged()
+			return
+		}
 	}
 }
 
 func (e *Emulator) Stop() {
 	e.mu.Lock()
-	serial, cancel, proc := e.serial, e.cancel, e.proc
+	serial, cancel, proc, exited := e.serial, e.cancel, e.proc, e.exited
 	e.state = "stopping"
 	e.mu.Unlock()
 	e.mobile.Changed(0)
 
 	e.stopFrida()
+	if serial != "" {
+		e.clearProxy(serial)
+		if proc != nil {
+			e.adbCmd(serial, 10*time.Second, "emu", "kill")
+		}
+	}
+	if proc != nil && exited != nil {
+		select {
+		case <-exited:
+		case <-time.After(45 * time.Second):
+		}
+	}
 	if cancel != nil {
 		cancel()
 	}
-	if serial != "" {
-		e.clearProxy(serial)
-		e.adbCmd(serial, 10*time.Second, "emu", "kill")
-	}
-	if proc != nil {
-		time.AfterFunc(5*time.Second, func() {
-			if proc.ProcessState == nil {
-				proc.Process.Kill()
-			}
-		})
-	}
 	e.mu.Lock()
-	e.state, e.serial, e.pkg, e.appName, e.proc, e.cancel = "idle", "", "", "", nil, nil
+	e.state, e.serial, e.pkg, e.appName, e.proc, e.cancel, e.exited = "idle", "", "", "", nil, nil, nil
 	e.message = "Emulator stopped."
 	e.mu.Unlock()
 	e.mobile.Changed(0)

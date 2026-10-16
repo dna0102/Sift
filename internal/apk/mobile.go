@@ -265,7 +265,10 @@ func (a *Analyser) decompileInBackground(r *Report, inPath, dir string) {
 		return
 	}
 
-	if manifest := findFile(out, "AndroidManifest.xml"); manifest != "" {
+	r.Lock().Lock()
+	haveManifest := r.Package != ""
+	r.Lock().Unlock()
+	if manifest := findFile(out, "AndroidManifest.xml"); manifest != "" && !haveManifest {
 		a.readManifest(r, manifest)
 	}
 	r.set(func() {
@@ -458,8 +461,10 @@ func (a *Analyser) scan(r *Report, root string) error {
 	r.set(func() { r.State = "scanning"; r.Progress = "Scanning for endpoints, secrets and pinning…" })
 	a.store.Changed(r.ID)
 	last := time.Now()
+	r.set(func() { r.ScanDir = root })
 	res := scanTree(scanConfig{
-		root: root,
+		root:        root,
+		maxFileSize: 512 << 20,
 		onProgress: func(files int) {
 			if time.Since(last) > 400*time.Millisecond {
 				last = time.Now()
