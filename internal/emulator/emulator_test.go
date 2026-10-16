@@ -32,6 +32,19 @@ func TestAndroidCertHashMatchesSubjectHashOld(t *testing.T) {
 	}
 }
 
+func TestInstallFailureReason(t *testing.T) {
+	out := "Performing Streamed Install\nadb.exe: failed to install C:\\very\\long\\path\\app.apk: Failure [INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: Update version code 50088 is older than current 50107]"
+	if got := failureReason(out); !strings.HasPrefix(got, "Failure [INSTALL_FAILED_VERSION_DOWNGRADE") {
+		t.Errorf("failureReason = %q", got)
+	}
+	if !needsUninstall(out) {
+		t.Error("a downgrade should be retried after uninstalling")
+	}
+	if needsUninstall("Failure [INSTALL_FAILED_NO_MATCHING_ABIS]") {
+		t.Error("an ABI mismatch can't be fixed by uninstalling")
+	}
+}
+
 func TestParseRAMMB(t *testing.T) {
 	for in, want := range map[string]int{"2G": 2048, "2048": 2048, "1536M": 1536, "4GB": 4096, "": 0} {
 		if got := parseRAMMB(in); got != want {

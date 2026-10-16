@@ -127,6 +127,8 @@ What it covers: the script hooks the common **Java-layer** pinning — OkHttp `C
 
 What it does **not** reliably do: apps with heavy anti-instrumentation (notably **TikTok / ByteDance**) detect Frida through native code and kill themselves regardless — there is no dependable one-click bypass for these, and defeating them is an app-specific, constantly-changing effort outside Sift's scope. Pinning done purely in native BoringSSL is also not bypassed by default, because the native hooks that would do it destabilise some apps. When unpinning can't take hold, the app still runs and all its non-pinned traffic is captured.
 
+If the device already has a different build of the app, Sift allows the downgrade. If that isn't enough, for example because the signature differs, it uninstalls the old copy and installs again. Apps often update themselves on the device, so this comes up a lot. When an install does fail, Sift shows Android's failure code. Traffic is tagged with the app's real name, which Sift reads from its decompiled resources when the manifest only references a string resource.
+
 Play Store images can't be rooted, so on them only browser HTTPS decrypts. Apps on the normal Android network stack (HttpsURLConnection, OkHttp, Cronet) trust the system CA. Chrome itself and Flutter apps bring their own root stores and ignore it, so for those you need the Frida option. **Stop** clears the proxy and shuts down an emulator Sift started. It leaves alone a device that was already running.
 
 The code viewer opens the file a finding came from. Large APKs are scanned from the strings in their dex files. Those dumps stay viewable after jadx finishes decompiling in the background, and for big dumps the viewer shows only the lines around the finding.

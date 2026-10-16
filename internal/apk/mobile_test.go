@@ -74,6 +74,17 @@ func TestFindingFilesStayReachableAfterDecompile(t *testing.T) {
 	}
 }
 
+func TestResourceLabel(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "res", "values"), 0o755)
+	manifest := filepath.Join(dir, "AndroidManifest.xml")
+	os.WriteFile(manifest, []byte(`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.epicgames.portal"><application android:label="@string/app_name"/></manifest>`), 0o644)
+	os.WriteFile(filepath.Join(dir, "res", "values", "strings.xml"), []byte(`<resources><string name="other">x</string><string name="app_name">Epic Games</string></resources>`), 0o644)
+	if got := resourceLabel(manifest); got != "Epic Games" {
+		t.Errorf("resourceLabel = %q, want Epic Games", got)
+	}
+}
+
 func TestSplitConcatURLs(t *testing.T) {
 	got := splitConcatURLs("https://a.com/xhttps://b.com/y")
 	if len(got) != 2 || got[0] != "https://a.com/x" || got[1] != "https://b.com/y" {

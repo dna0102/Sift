@@ -22,7 +22,7 @@ import (
 	"sift/internal/sysproxy"
 )
 
-const Version = "2.2.2"
+const Version = "2.2.3"
 
 type App struct {
 	Cfg       *core.Config

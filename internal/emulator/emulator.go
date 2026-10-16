@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -272,7 +273,7 @@ func (e *Emulator) launchFlow(ctx context.Context, avd, apkPath, pkg string) {
 	}
 
 	e.setState("installing", "Installing the app…")
-	if out, err := e.installApp(serial, apkPath); err != nil {
+	if out, err := e.installApp(serial, apkPath, pkg); err != nil {
 		detail := strings.TrimSpace(out)
 		if detail == "" {
 			detail = err.Error()
@@ -630,7 +631,44 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func (e *Emulator) installApp(serial, path string) (string, error) {
+var installFailure = regexp.MustCompile(`Failure \[[^\]]*\]|INSTALL_[A-Z_]+[^\r\n]*`)
+
+func failureReason(out string) string {
+	if m := installFailure.FindString(out); m != "" {
+		return m
+	}
+	return lastLine(out)
+}
+
+func needsUninstall(out string) bool {
+	return strings.Contains(out, "INSTALL_FAILED_VERSION_DOWNGRADE") ||
+		strings.Contains(out, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") ||
+		strings.Contains(out, "signatures do not match")
+}
+
+func (e *Emulator) install(serial, pkg string, files ...string) (string, error) {
+	verb := "install"
+	if len(files) > 1 {
+		verb = "install-multiple"
+	}
+	try := func() (string, error) {
+		args := append([]string{"-s", serial, verb, "-r", "-g", "-d"}, files...)
+		out, err := e.run(10*time.Minute, e.adb, args...)
+		if err != nil && !strings.Contains(out, "Success") {
+			return out, fmt.Errorf("%s", failureReason(out))
+		}
+		return out, nil
+	}
+	out, err := try()
+	if err != nil && pkg != "" && needsUninstall(out) {
+		e.setState("installing", "A different build of this app is already on the device — replacing it…")
+		e.adbCmd(serial, 60*time.Second, "uninstall", pkg)
+		out, err = try()
+	}
+	return out, err
+}
+
+func (e *Emulator) installApp(serial, path, pkg string) (string, error) {
 	lower := strings.ToLower(path)
 	isBundle := strings.HasSuffix(lower, ".xapk") || strings.HasSuffix(lower, ".apks") ||
 		strings.HasSuffix(lower, ".apkm") || strings.HasSuffix(lower, ".aab")
@@ -642,9 +680,9 @@ func (e *Emulator) installApp(serial, path string) (string, error) {
 	}
 
 	if !isBundle {
-		out, err := e.adbCmd(serial, 10*time.Minute, "install", "-r", "-g", path)
-		if err != nil && !strings.Contains(out, "Success") {
-			return lastLine(out), fmt.Errorf("install failed")
+		out, err := e.install(serial, pkg, path)
+		if err != nil {
+			return err.Error(), err
 		}
 		return out, nil
 	}
@@ -671,19 +709,17 @@ func (e *Emulator) installApp(serial, path string) (string, error) {
 	}
 
 	e.setState("installing", fmt.Sprintf("Installing %d APKs…", len(kept)))
-	args := append([]string{"-s", serial, "install-multiple", "-r", "-g"}, kept...)
-	out, err := e.run(10*time.Minute, e.adb, args...)
-	if err != nil && !strings.Contains(out, "Success") {
+	out, err := e.install(serial, pkg, kept...)
+	if err != nil {
 		if strings.Contains(out, "NO_MATCHING_ABIS") {
 			return "", fmt.Errorf("the app's native libraries don't match the emulator (%s). Use an arm64-v8a/universal build of the app, or an ARM system image.", strings.Join(deviceABIs, "/"))
 		}
-
 		if base := apk.PickBaseAPK(apks); base != "" {
-			if o2, e2 := e.adbCmd(serial, 10*time.Minute, "install", "-r", "-g", base); e2 == nil || strings.Contains(o2, "Success") {
+			if o2, e2 := e.install(serial, pkg, base); e2 == nil {
 				return o2, nil
 			}
 		}
-		return lastLine(out), fmt.Errorf("install-multiple failed")
+		return err.Error(), err
 	}
 	return out, nil
 }

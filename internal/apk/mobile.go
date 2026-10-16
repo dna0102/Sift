@@ -268,14 +268,61 @@ func (a *Analyser) decompileInBackground(r *Report, inPath, dir string) {
 	r.Lock().Lock()
 	haveManifest := r.Package != ""
 	r.Lock().Unlock()
-	if manifest := findFile(out, "AndroidManifest.xml"); manifest != "" && !haveManifest {
-		a.readManifest(r, manifest)
+	if manifest := findFile(out, "AndroidManifest.xml"); manifest != "" {
+		if !haveManifest {
+			a.readManifest(r, manifest)
+		}
+		if label := resourceLabel(manifest); label != "" {
+			r.set(func() {
+				if r.Label == "" {
+					r.Label = label
+				}
+			})
+		}
 	}
 	r.set(func() {
 		r.SrcDir = out
 		r.QuickScan = false
 	})
 	a.store.Changed(r.ID)
+}
+
+func resourceLabel(manifestPath string) string {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	var m struct {
+		App struct {
+			Label string `xml:"label,attr"`
+		} `xml:"application"`
+	}
+	if xml.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	name, ok := strings.CutPrefix(m.App.Label, "@string/")
+	if !ok {
+		return ""
+	}
+	data, err = os.ReadFile(filepath.Join(filepath.Dir(manifestPath), "res", "values", "strings.xml"))
+	if err != nil {
+		return ""
+	}
+	var res struct {
+		Strings []struct {
+			Name  string `xml:"name,attr"`
+			Value string `xml:",chardata"`
+		} `xml:"string"`
+	}
+	if xml.Unmarshal(data, &res) != nil {
+		return ""
+	}
+	for _, s := range res.Strings {
+		if s.Name == name {
+			return strings.TrimSpace(s.Value)
+		}
+	}
+	return ""
 }
 
 func totalDexMB(inPath string) int {
